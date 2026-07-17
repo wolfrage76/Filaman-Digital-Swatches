@@ -1,0 +1,15 @@
+services:
+  bambuddy-h2c-display-bridge:
+    build: .
+    image: bambuddy-h2c-display-bridge:local
+    container_name: bambuddy-h2c-display-bridge
+    restart: unless-stopped
+    network_mode: host
+    env_file:
+      - .env
+    environment:
+      # Host networking: talk to Bambuddy and Mosquitto on this machine.
+      BAMBUDDY_URL: ${BAMBUDDY_URL:-http://127.0.0.1:8013}
+      MQTT_HOST: ${MQTT_HOST:-127.0.0.1}
+      MQTT_PORT: ${MQTT_PORT:-1883}
+      DISPLAY_TZ: ${DISPLAY_TZ:-America/New_York}
