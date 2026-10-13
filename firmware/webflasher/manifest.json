@@ -1,12 +1,15 @@
 {
-  "name": "CrowPanel H2C",
-  "version": "0.12.0",
-  "new_install_prompt_erase": false,
+  "name": "CrowPanel AMS Monitor",
+  "version": "0.20.13",
+  "new_install_prompt_erase": true,
   "builds": [
     {
       "chipFamily": "ESP32-S3",
       "parts": [
-        { "path": "firmware/factory.bin", "offset": 0 }
+        {
+          "path": "firmware/factory.bin",
+          "offset": 0
+        }
       ]
     }
   ]

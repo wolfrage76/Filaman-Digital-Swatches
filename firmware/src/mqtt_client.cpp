@@ -238,10 +238,10 @@ void DisplayMqtt::reconnect() {
   publishStatus("MQTT connecting");
   bool connected = false;
   if (config().mqttUsername.length() > 0) {
-    connected = client_.connect("crowpanel-h2c-ams", config().mqttUsername.c_str(),
+    connected = client_.connect("crowpanel-ams", config().mqttUsername.c_str(),
                                 config().mqttPassword.c_str());
   } else {
-    connected = client_.connect("crowpanel-h2c-ams");
+    connected = client_.connect("crowpanel-ams");
   }
 
   if (connected) {

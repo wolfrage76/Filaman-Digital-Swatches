@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>CrowPanel — USB Firmware Flasher</title>
+  <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js"></script>
+  <style>
+    :root {
+      --bg: #0a0e14;
+      --panel: #121820;
+      --text: #f2f5f8;
+      --muted: #8b98a8;
+      --accent: #3ddc97;
+      --link: #5aa7ff;
+      --border: #2a3544;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background:
+        radial-gradient(ellipse 80% 50% at 50% -10%, #1a3a2a 0%, transparent 55%),
+        var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+    main {
+      max-width: 640px;
+      margin: 0 auto;
+      padding: 2.5rem 1.25rem 3rem;
+    }
+    h1 {
+      margin: 0 0 .35rem;
+      font-size: 1.75rem;
+      color: var(--accent);
+      letter-spacing: -0.02em;
+    }
+    .lead { color: var(--muted); margin: 0 0 1.5rem; }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem 1.35rem;
+      margin-bottom: 1.25rem;
+    }
+    ol { margin: 0; padding-left: 1.25rem; }
+    li { margin: .45rem 0; }
+    .install {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: .75rem;
+      margin: 1.25rem 0 .5rem;
+    }
+    esp-web-install-button {
+      --esp-tools-button-color: var(--accent);
+      --esp-tools-button-text-color: var(--bg);
+      --esp-tools-button-border-radius: 8px;
+    }
+    .note { color: var(--muted); font-size: .9rem; margin: .75rem 0 0; }
+    a { color: var(--link); }
+    code {
+      font-size: .88em;
+      background: #182028;
+      padding: .1em .35em;
+      border-radius: 4px;
+    }
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .5rem .85rem;
+      font-size: .85rem;
+      color: var(--muted);
+      margin-bottom: 1.25rem;
+    }
+    .meta span {
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: .15rem .65rem;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>CrowPanel USB Flasher</h1>
+    <p class="lead">
+      First-time flash for the Elecrow CrowPanel 7″ (ESP32-S3) AMS dashboard.
+      Install firmware from this page over USB — no PlatformIO required.
+    </p>
+
+    <div class="meta">
+      <span>Firmware 0.20.13</span>
+      <span>ESP32-S3</span>
+      <span>Chrome / Edge</span>
+    </div>
+
+    <div class="card">
+      <ol>
+        <li>Install the <b>CH340</b> USB-serial driver if your OS does not already have it.</li>
+        <li>Connect the CrowPanel to this computer with a USB data cable.</li>
+        <li>Click <b>Connect</b> / <b>Install</b> below and select the CrowPanel serial port.</li>
+        <li>Wait for the flash to finish, then power-cycle or reset the panel.</li>
+      </ol>
+
+      <div class="install">
+        <esp-web-install-button manifest="./manifest.json"></esp-web-install-button>
+      </div>
+
+      <p class="note">
+        Needs <b>Chrome or Edge</b> (Web Serial) and this page over <b>HTTPS</b>
+        (or <code>http://localhost</code>). Safari and Firefox are not supported.
+      </p>
+    </div>
+
+    <div class="card">
+      <p style="margin:0 0 .6rem"><b>After flashing</b></p>
+      <p class="note" style="margin:0">
+        Join WiFi from the on-device setup, then open
+        <code>http://crowpanel.local/</code> (or the panel’s IP) to set the FilaMan URL and API key.
+        Later updates can use that config page’s <code>/update</code> endpoint or LAN OTA —
+        see the project README.
+      </p>
+    </div>
+  </main>
+</body>
+</html>

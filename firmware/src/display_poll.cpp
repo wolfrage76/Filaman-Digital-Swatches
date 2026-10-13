@@ -602,8 +602,10 @@ bool idListed(const PrinterOption *printers, int count, int id) {
   return false;
 }
 
-// crowpanel-h2d → printer named H2D. The saved id is kept when it is still in
-// the list; otherwise the hostname wins over "last active printer".
+// Optional naming: crowpanel-h2d → printer named H2D. Default hostname
+// "crowpanel" does not auto-pick; pin an id or rename the host. The saved id
+// is kept when it is still in the list; otherwise the hostname wins over
+// "last active printer".
 bool hostnameMatchesPrinter(const String &hostname, const String &printerName) {
   String host = hostname;
   String name = printerName;

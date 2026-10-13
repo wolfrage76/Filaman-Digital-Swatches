@@ -1,36 +1,82 @@
-# Flashing CrowPanel 7" (ESP32-S3)
+# Flashing CrowPanel 7″ (ESP32-S3)
 
-Firmware **v0.9.0+** (P0–P2): dual OTA partitions, footer page map, AMS overview, alerts, freshness, and safe controls.
+Firmware **v0.20.13** — Display API primary path, dual OTA partitions, AMS overview / HT / alerts, web portal, ArduinoOTA + HTTP `/update`.
 
-## First flash (USB) — required when changing partitions
+Daily build env: **`crowpanel_7_idf`** (Arduino 3 / IDF 5.3, bounce buffers, SPIRAM XIP).
+
+Default mDNS / OTA hostname: **`crowpanel`** → `http://crowpanel.local/`.
+
+## First flash (recommended): browser + USB
+
+Published flasher (Chrome / Edge):
+
+**https://wolfrage76.github.io/7in-Display-ESP32/**
+
+1. Install a CH340 driver if needed.
+2. Connect the CrowPanel with a USB data cable.
+3. Click **Install** and select the serial port.
+4. Configure WiFi and FilaMan on the panel or at `http://crowpanel.local/`.
+
+Rebuild the factory image after firmware changes:
 
 ```bash
 cd firmware
-"/home/wofl/.local/share/platformio-venv/bin/pio" run --target upload
+./webflasher/build_factory.sh
 ```
 
-After boot you should see the firmware version in the header, footer chips (`Print All A B C D HT Alrt`), and freshness (`Live` / `Stale` / `FilaMan...`).
+That updates `firmware/webflasher/firmware/factory.bin` and `docs/firmware/factory.bin` (GitHub Pages).
+
+## Dev USB flash (PlatformIO)
+
+Required when changing the partition table (`min_spiffs.csv`), or for local iteration.
+
+```bash
+cd firmware
+cp include/secrets.h.example include/secrets.h   # first time only
+../.venv/bin/pio run -e crowpanel_7_idf -t upload
+```
+
+Always pass `-e crowpanel_7_idf`. A bare `pio run -t upload` picks the first env (`crowpanel_7_hmi`), which is the older Arduino 2.x stack.
+
+After boot: firmware version in the header, footer chips (`Print All A B C D HT Alrt`), freshness `FilaMan...` → `Live`.
 
 ## Later updates: LAN OTA
 
+Password comes from `OTA_PASSWORD` in `secrets.h` (never commit that file).
+
 ```bash
 cd firmware
-"/home/wofl/.local/share/platformio-venv/bin/pio" run -e crowpanel_7_ota -t upload \
-  --upload-port <panel-ip>
+./ota.sh                 # default: crowpanel.local
+./ota.sh 192.168.1.164   # or panel IP
 ```
 
-`--auth` in the `crowpanel_7_ota` env must match `OTA_PASSWORD` in `secrets.h`.
+Or via PlatformIO:
 
-## Panel QA checklist (v0.9.0)
+```bash
+OTA_PASSWORD=yourpass ../.venv/bin/pio run -e crowpanel_7_idf_ota -t upload \
+  --upload-port crowpanel.local
+```
 
-1. Header shows freshness `Live` within ~15s of MQTT data.
-2. Alert banner appears when HMS/low-spool alerts exist; tap opens **Alrt**.
+## Browser flash (already on WiFi)
+
+`http://crowpanel.local/update` — user `admin`, password = OTA password.
+
+Config (WiFi, FilaMan, MQTT, hostname, printer): `http://crowpanel.local/`.
+
+## Panel QA checklist (v0.20.x)
+
+1. Header reaches `Live` within ~15 s of a reachable FilaMan Display API (bridge not required).
+2. Alert banner appears when HMS / low-spool alerts exist; tap opens **Alrt**.
 3. Footer jumps: Print, All (overview), A–D, HT, Alrt.
 4. Swipe left/right changes pages.
-5. Print page controls: Pause/Resume, Light, Speed, Refresh (ack text under buttons).
-6. Idle returns to Print after 60s except while viewing active alerts.
-7. With FilaMan configured, the header reaches `Live` from the Display API. The bridge container is not required.
+5. Idle returns to Print after ~60 s except while viewing active alerts.
+6. Menu and `http://crowpanel.local/` can change WiFi, FilaMan URL/key, and monitored printer.
+7. If FilaMan is down twice in a row (or unset), MQTT fallback under `display/amsview` (or your topic prefix) can still feed the UI.
 
-## Planned later (P3)
+## Legacy / experimental envs
 
-Web config for timezone, WiFi/MQTT, display prefs, and inventory workflows.
+| Env | Notes |
+|---|---|
+| `crowpanel_7_hmi` / `_ota` | Arduino 2.x / IDF 4.4 — older “stable” stack |
+| `crowpanel_7_bounce` / `_bounce_ota` | Bounce buffers without full XIP rebuild |
+| `crowpanel_7_idf` / `_idf_ota` | **Current daily build** |
