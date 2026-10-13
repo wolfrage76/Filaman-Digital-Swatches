@@ -182,6 +182,74 @@ void addSection(lv_obj_t *parent, const char *text) {
   lv_label_set_text(lbl, text);
 }
 
+lv_obj_t *makeMenuRow(lv_obj_t *parent, lv_coord_t height) {
+  lv_obj_t *row = lv_obj_create(parent);
+  lv_obj_remove_style_all(row);
+  lv_obj_set_width(row, lv_pct(100));
+  if (height > 0) {
+    lv_obj_set_height(row, height);
+  } else {
+    lv_obj_set_height(row, LV_SIZE_CONTENT);
+    lv_obj_set_flex_grow(row, 1);
+  }
+  lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+  lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_style_pad_column(row, 10, 0);
+  lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+  return row;
+}
+
+// Home-menu destination tile: icon + label, equal-width in a flex row.
+lv_obj_t *makeMenuTile(lv_obj_t *parent, const char *symbol, const char *label, bool emphasize,
+                       bool badge, lv_event_cb_t cb, void *ud) {
+  lv_obj_t *btn = lv_btn_create(parent);
+  lv_obj_set_flex_grow(btn, 1);
+  lv_obj_set_width(btn, 0);
+  lv_obj_set_height(btn, lv_pct(100));
+  lv_obj_set_style_radius(btn, 14, 0);
+  lv_obj_set_style_bg_color(btn, lv_color_hex(emphasize ? 0x15261F : COL_SURFACE_2), 0);
+  lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
+  lv_obj_set_style_bg_color(btn, lv_color_hex(emphasize ? 0x1C3228 : 0x1E2A34), LV_STATE_PRESSED);
+  lv_obj_set_style_border_width(btn, emphasize ? 2 : 1, 0);
+  lv_obj_set_style_border_color(btn, lv_color_hex(emphasize ? COL_ACCENT : COL_BORDER), 0);
+  lv_obj_set_style_shadow_width(btn, 0, 0);
+  lv_obj_set_style_pad_all(btn, 10, 0);
+  lv_obj_set_flex_flow(btn, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_flex_align(btn, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_style_pad_row(btn, 8, 0);
+  lv_obj_clear_flag(btn, LV_OBJ_FLAG_SCROLLABLE);
+
+  if (badge) {
+    lv_obj_t *dot = lv_obj_create(btn);
+    lv_obj_remove_style_all(dot);
+    lv_obj_set_size(dot, 10, 10);
+    lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(dot, lv_color_hex(COL_ACCENT), 0);
+    lv_obj_set_style_bg_opa(dot, LV_OPA_COVER, 0);
+    lv_obj_clear_flag(dot, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(dot, LV_OBJ_FLAG_FLOATING);
+    lv_obj_align(dot, LV_ALIGN_TOP_RIGHT, -6, 6);
+  }
+
+  lv_obj_t *icon = lv_label_create(btn);
+  lv_obj_set_style_text_font(icon, &lv_font_montserrat_22, 0);
+  lv_obj_set_style_text_color(icon, lv_color_hex(COL_ACCENT), 0);
+  lv_label_set_text(icon, symbol);
+
+  lv_obj_t *lbl = lv_label_create(btn);
+  lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_color(lbl, lv_color_hex(COL_TEXT), 0);
+  lv_obj_set_style_text_align(lbl, LV_TEXT_ALIGN_CENTER, 0);
+  lv_label_set_long_mode(lbl, LV_LABEL_LONG_DOT);
+  lv_obj_set_width(lbl, lv_pct(100));
+  lv_label_set_text(lbl, label);
+
+  if (cb) {
+    lv_obj_add_event_cb(btn, cb, LV_EVENT_CLICKED, ud);
+  }
+  return btn;
+}
+
 void addNavRow(lv_obj_t *parent, const char *text, bool last, lv_event_cb_t cb, void *ud,
                bool badge = false) {
   lv_obj_t *btn = lv_btn_create(parent);
@@ -441,50 +509,61 @@ void showHome() {
   confirmResetArmed = false;
   clearContent();
   lv_label_set_text(titleLabel, "Menu");
-  // Compact one-line subtitle (DOT-truncated). Full URL lives in System pane.
+  // Compact one-line status in the header row. Full URL lives in System.
   String sub = String("v") + FIRMWARE_VERSION;
   if (WiFi.status() == WL_CONNECTED) {
-    sub += "  |  " + WiFi.localIP().toString() + "  |  " + config().otaHostname + ".local";
+    sub += "  ·  " + WiFi.localIP().toString() + "  ·  " + config().otaHostname + ".local";
   } else {
-    sub += "  |  WiFi offline";
+    sub += "  ·  WiFi offline";
   }
   setStatus(sub, COL_MUTED);
 
-  lv_obj_t *col = makeScroll();
+  // No scrolling on the home grid — tiles fill the available content area.
+  lv_obj_t *col = lv_obj_create(content);
+  lv_obj_remove_style_all(col);
+  lv_obj_set_width(col, lv_pct(100));
+  lv_obj_set_flex_grow(col, 1);
+  lv_obj_set_style_min_height(col, 0, 0);
+  lv_obj_set_flex_flow(col, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_style_pad_row(col, 10, 0);
+  lv_obj_clear_flag(col, LV_OBJ_FLAG_SCROLLABLE);
+
   addSection(col, "SCREENS");
-  lv_obj_t *screens = lv_obj_create(col);
-  lv_obj_remove_style_all(screens);
-  lv_obj_set_width(screens, lv_pct(100));
-  lv_obj_set_height(screens, LV_SIZE_CONTENT);
-  lv_obj_set_flex_flow(screens, LV_FLEX_FLOW_ROW);
-  lv_obj_set_style_pad_column(screens, 8, 0);
-  lv_obj_clear_flag(screens, LV_OBJ_FLAG_SCROLLABLE);
-  lv_obj_t *printBtn =
-      makeAction(screens, "Printer", false, onScreen, reinterpret_cast<void *>(static_cast<intptr_t>(STATUS_PAGE)));
-  lv_obj_t *amsBtn = makeAction(screens, "AMS View", false, onScreen,
-                                reinterpret_cast<void *>(static_cast<intptr_t>(AMS_OVERVIEW_PAGE)));
-  lv_obj_t *alertsBtn =
-      makeAction(screens, "Alerts", false, onScreen, reinterpret_cast<void *>(static_cast<intptr_t>(ALERTS_PAGE)));
-  lv_obj_set_flex_grow(printBtn, 1);
-  lv_obj_set_flex_grow(amsBtn, 1);
-  lv_obj_set_flex_grow(alertsBtn, 1);
-  lv_obj_set_width(printBtn, LV_SIZE_CONTENT);
-  lv_obj_set_width(amsBtn, LV_SIZE_CONTENT);
-  lv_obj_set_width(alertsBtn, LV_SIZE_CONTENT);
+  lv_obj_t *screens = makeMenuRow(col, 86);
+  makeMenuTile(screens, LV_SYMBOL_PLAY, "Printer", true, false, onScreen,
+               reinterpret_cast<void *>(static_cast<intptr_t>(STATUS_PAGE)));
+  makeMenuTile(screens, LV_SYMBOL_DIRECTORY, "AMS View", true, false, onScreen,
+               reinterpret_cast<void *>(static_cast<intptr_t>(AMS_OVERVIEW_PAGE)));
+  makeMenuTile(screens, LV_SYMBOL_WARNING, "Alerts", true, false, onScreen,
+               reinterpret_cast<void *>(static_cast<intptr_t>(ALERTS_PAGE)));
 
   addSection(col, "CONFIGURATION");
-  lv_obj_t *card = makeCard(col);
-  lv_obj_set_style_pad_all(card, 0, 0);
-  lv_obj_set_style_pad_row(card, 0, 0);
-  addNavRow(card, "Printer", false, onPrinter, nullptr);
-  addNavRow(card, "WiFi", false, onWifi, nullptr);
-  addNavRow(card, "FilaMan", false, [](lv_event_t *) { showFilaman(); }, nullptr);
-  addNavRow(card, "MQTT", false, [](lv_event_t *) { showMqtt(); }, nullptr);
-  addNavRow(card, "Display & Alerts", false, [](lv_event_t *) { showDisplay(); }, nullptr);
-  addNavRow(card, "Device & Timezone", false, [](lv_event_t *) { showDevice(); }, nullptr);
-  addNavRow(card, "Firmware Update", false, [](lv_event_t *) { showUpdate(); }, nullptr,
-            updateBadgeVisible());
-  addNavRow(card, "System & Diagnostics", true, [](lv_event_t *) { showSystem(); }, nullptr);
+  lv_obj_t *cfg = lv_obj_create(col);
+  lv_obj_remove_style_all(cfg);
+  lv_obj_set_width(cfg, lv_pct(100));
+  lv_obj_set_flex_grow(cfg, 1);
+  lv_obj_set_style_min_height(cfg, 0, 0);
+  lv_obj_set_flex_flow(cfg, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_style_pad_row(cfg, 10, 0);
+  lv_obj_clear_flag(cfg, LV_OBJ_FLAG_SCROLLABLE);
+
+  lv_obj_t *row1 = makeMenuRow(cfg, 0);
+  makeMenuTile(row1, LV_SYMBOL_LIST, "Printer", false, false, onPrinter, nullptr);
+  makeMenuTile(row1, LV_SYMBOL_WIFI, "WiFi", false, false, onWifi, nullptr);
+  makeMenuTile(row1, LV_SYMBOL_GPS, "FilaMan", false, false, [](lv_event_t *) { showFilaman(); },
+               nullptr);
+  makeMenuTile(row1, LV_SYMBOL_SHUFFLE, "MQTT", false, false, [](lv_event_t *) { showMqtt(); },
+               nullptr);
+
+  lv_obj_t *row2 = makeMenuRow(cfg, 0);
+  makeMenuTile(row2, LV_SYMBOL_EYE_OPEN, "Display", false, false, [](lv_event_t *) { showDisplay(); },
+               nullptr);
+  makeMenuTile(row2, LV_SYMBOL_SETTINGS, "Device", false, false, [](lv_event_t *) { showDevice(); },
+               nullptr);
+  makeMenuTile(row2, LV_SYMBOL_DOWNLOAD, "Update", false, updateBadgeVisible(),
+               [](lv_event_t *) { showUpdate(); }, nullptr);
+  makeMenuTile(row2, LV_SYMBOL_FILE, "System", false, false, [](lv_event_t *) { showSystem(); },
+               nullptr);
 }
 
 void showFilaman() {
@@ -1153,52 +1232,45 @@ void menu_begin() {
   lv_obj_clear_flag(overlay, LV_OBJ_FLAG_SCROLLABLE);
   lv_obj_add_flag(overlay, LV_OBJ_FLAG_HIDDEN);
 
-  // Title row + fixed single-line status bar. The status used to wrap under
-  // the title (LONG_WRAP on a long v/IP/host string) and looked like a broken
-  // header; keep it one truncated line below the title.
+  // Single-row header: title | truncated status | close. A second status line
+  // under the title kept growing/overflowing into the content area on long
+  // v/IP/host strings even with LONG_DOT, so keep everything on one clipped row.
   lv_obj_t *header = lv_obj_create(overlay);
   lv_obj_remove_style_all(header);
   lv_obj_set_width(header, lv_pct(100));
-  lv_obj_set_height(header, LV_SIZE_CONTENT);
-  lv_obj_set_flex_flow(header, LV_FLEX_FLOW_COLUMN);
-  lv_obj_set_style_pad_row(header, 4, 0);
+  lv_obj_set_height(header, 44);
+  lv_obj_set_flex_flow(header, LV_FLEX_FLOW_ROW);
+  lv_obj_set_flex_align(header, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_style_pad_column(header, 10, 0);
   lv_obj_clear_flag(header, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_style_clip_corner(header, true, 0);
 
-  lv_obj_t *titleRow = lv_obj_create(header);
-  lv_obj_remove_style_all(titleRow);
-  lv_obj_set_width(titleRow, lv_pct(100));
-  lv_obj_set_height(titleRow, 40);
-  lv_obj_set_flex_flow(titleRow, LV_FLEX_FLOW_ROW);
-  lv_obj_set_flex_align(titleRow, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-  lv_obj_set_style_pad_column(titleRow, 10, 0);
-  lv_obj_clear_flag(titleRow, LV_OBJ_FLAG_SCROLLABLE);
-
-  titleLabel = lv_label_create(titleRow);
+  titleLabel = lv_label_create(header);
   lv_obj_set_style_text_font(titleLabel, &lv_font_montserrat_22, 0);
   lv_obj_set_style_text_color(titleLabel, lv_color_hex(COL_TEXT), 0);
-  lv_obj_set_flex_grow(titleLabel, 1);
-  lv_label_set_long_mode(titleLabel, LV_LABEL_LONG_DOT);
   lv_label_set_text(titleLabel, "Menu");
+  lv_obj_set_style_min_width(titleLabel, 70, 0);
 
-  lv_obj_t *closeBtn = lv_btn_create(titleRow);
+  statusLabel = lv_label_create(header);
+  lv_obj_set_style_text_font(statusLabel, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_color(statusLabel, lv_color_hex(COL_MUTED), 0);
+  lv_obj_set_flex_grow(statusLabel, 1);
+  lv_obj_set_width(statusLabel, 0);  // required so flex + LONG_DOT can shrink
+  lv_obj_set_style_max_height(statusLabel, 22, 0);
+  lv_label_set_long_mode(statusLabel, LV_LABEL_LONG_DOT);
+  lv_label_set_text(statusLabel, "");
+
+  lv_obj_t *closeBtn = lv_btn_create(header);
   lv_obj_set_size(closeBtn, 60, 40);
   lv_obj_set_style_bg_color(closeBtn, lv_color_hex(COL_SURFACE_2), 0);
   lv_obj_set_style_border_width(closeBtn, 1, 0);
   lv_obj_set_style_border_color(closeBtn, lv_color_hex(COL_BORDER), 0);
-  lv_obj_set_style_radius(closeBtn, 0, 0);
+  lv_obj_set_style_radius(closeBtn, 10, 0);
   lv_obj_add_event_cb(closeBtn, onCloseClicked, LV_EVENT_CLICKED, nullptr);
   lv_obj_t *xl = lv_label_create(closeBtn);
   lv_obj_set_style_text_color(xl, lv_color_hex(COL_TEXT), 0);
   lv_label_set_text(xl, LV_SYMBOL_CLOSE);
   lv_obj_center(xl);
-
-  statusLabel = lv_label_create(header);
-  lv_obj_set_style_text_font(statusLabel, &lv_font_montserrat_14, 0);
-  lv_obj_set_style_text_color(statusLabel, lv_color_hex(COL_MUTED), 0);
-  lv_obj_set_width(statusLabel, lv_pct(100));
-  lv_obj_set_height(statusLabel, 20);
-  lv_label_set_long_mode(statusLabel, LV_LABEL_LONG_DOT);
-  lv_label_set_text(statusLabel, "");
 
   content = lv_obj_create(overlay);
   lv_obj_remove_style_all(content);
