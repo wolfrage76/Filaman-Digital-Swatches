@@ -103,6 +103,7 @@ void AppConfig::load() {
   if (!displayTimezone.length()) {
     displayTimezone = DISPLAY_TIMEZONE;
   }
+  autoCheckUpdates = p.getBool("autoOta", false);
   p.end();
   normalizeDisplayTimeouts(displayDimMin, displayOffMin);
   normalizeBrightness(displayFullBrightPct, displayDimBrightPct);
@@ -134,6 +135,7 @@ void AppConfig::save() const {
   p.putInt("spCrit", spoolCritPct);
   p.putInt("idleSec", idleReturnSec);
   p.putString("tz", displayTimezone);
+  p.putBool("autoOta", autoCheckUpdates);
   p.end();
 }
 
@@ -232,5 +234,16 @@ void AppConfig::setFilamanBaseUrl(const String &url) {
   Preferences p;
   p.begin(kNs, /*readOnly=*/false);
   p.putString("fmUrl", filamanBaseUrl);
+  p.end();
+}
+
+void AppConfig::setAutoCheckUpdates(bool enabled) {
+  if (enabled == autoCheckUpdates) {
+    return;
+  }
+  autoCheckUpdates = enabled;
+  Preferences p;
+  p.begin(kNs, /*readOnly=*/false);
+  p.putBool("autoOta", autoCheckUpdates);
   p.end();
 }

@@ -21,3 +21,5 @@ void ui_set_connection_status(const String &message);
 void ui_set_ip_address(const String &ip);
 void ui_handle_swipe(int16_t startX, int16_t endX);
 bool ui_has_active_alerts();
+// Green badge on the hamburger when auto-check found a newer GitHub release.
+void ui_refresh_update_badge();

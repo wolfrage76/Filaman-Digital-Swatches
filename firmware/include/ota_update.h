@@ -18,3 +18,12 @@ bool ota_check_github_update(String &latestVersionOut, String &downloadUrlOut, S
 bool ota_install_github_update(const String &downloadUrl,
                                std::function<void(int pct)> onProgress,
                                String &errorOut);
+
+// Background poll when AppConfig::autoCheckUpdates is enabled.
+void ota_auto_check_loop();
+void ota_auto_check_request_now();  // run on next eligible loop (e.g. after enabling)
+
+// Cached result from the last successful GitHub version check.
+bool ota_update_available();
+String ota_cached_latest_version();
+String ota_cached_download_url();

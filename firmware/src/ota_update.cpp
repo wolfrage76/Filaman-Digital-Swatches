@@ -9,12 +9,24 @@
 
 #include "app_config.h"
 #include "config.h"
+#include "ui/menu_ui.h"
 #include "ui/ui.h"
 
 namespace {
 
 bool begun = false;
 bool active = false;
+
+String cachedLatestVersion;
+String cachedDownloadUrl;
+bool forceAutoCheck = false;
+unsigned long lastAutoCheckMs = 0;
+unsigned long wifiConnectedSinceMs = 0;
+bool sawWifiConnected = false;
+
+// First poll shortly after WiFi is up; then every 12 hours.
+constexpr unsigned long kAutoCheckFirstDelayMs = 90UL * 1000UL;
+constexpr unsigned long kAutoCheckIntervalMs = 12UL * 60UL * 60UL * 1000UL;
 
 constexpr const char *kManifestUrl =
     "https://wolfrage76.github.io/Filaman-Digital-Swatches/manifest-update.json";
@@ -36,6 +48,14 @@ void parseVersionParts(const String &v, int parts[3]) {
   parts[0] = parts[1] = parts[2] = 0;
   const String s = cleanVersion(v);
   sscanf(s.c_str(), "%d.%d.%d", &parts[0], &parts[1], &parts[2]);
+}
+
+void rememberCheckResult(const String &ver, const String &url) {
+  cachedLatestVersion = ver;
+  cachedDownloadUrl = url;
+  lastAutoCheckMs = millis();
+  forceAutoCheck = false;
+  ui_refresh_update_badge();
 }
 
 }  // namespace
@@ -135,6 +155,7 @@ bool ota_check_github_update(String &latestVersionOut, String &downloadUrlOut, S
     }
     return false;
   }
+  rememberCheckResult(latestVersionOut, downloadUrlOut);
   return true;
 }
 
@@ -311,4 +332,56 @@ void ota_loop() {
 
 bool ota_is_active() {
   return active;
+}
+
+bool ota_update_available() {
+  return cachedLatestVersion.length() > 0 &&
+         ota_compare_versions(cachedLatestVersion, FIRMWARE_VERSION) > 0;
+}
+
+String ota_cached_latest_version() { return cachedLatestVersion; }
+
+String ota_cached_download_url() { return cachedDownloadUrl; }
+
+void ota_auto_check_request_now() { forceAutoCheck = true; }
+
+void ota_auto_check_loop() {
+  if (!config().autoCheckUpdates) {
+    forceAutoCheck = false;
+    return;
+  }
+  if (WiFi.status() != WL_CONNECTED || active) {
+    sawWifiConnected = false;
+    wifiConnectedSinceMs = 0;
+    return;
+  }
+  if (!sawWifiConnected) {
+    sawWifiConnected = true;
+    wifiConnectedSinceMs = millis();
+  }
+  // Avoid freezing the open menu during a multi-second HTTPS fetch.
+  if (menu_is_open() && !forceAutoCheck) {
+    return;
+  }
+
+  const unsigned long now = millis();
+  if (!forceAutoCheck) {
+    if (lastAutoCheckMs == 0) {
+      if (now - wifiConnectedSinceMs < kAutoCheckFirstDelayMs) {
+        return;
+      }
+    } else if (now - lastAutoCheckMs < kAutoCheckIntervalMs) {
+      return;
+    }
+  }
+
+  forceAutoCheck = false;
+  lastAutoCheckMs = now;
+  String ver, url, err;
+  if (ota_check_github_update(ver, url, err)) {
+    Serial.printf("Auto update check: latest v%s (%s)\n", ver.c_str(),
+                  ota_update_available() ? "newer available" : "up to date");
+  } else {
+    Serial.printf("Auto update check failed: %s\n", err.c_str());
+  }
 }

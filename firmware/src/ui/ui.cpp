@@ -7,6 +7,7 @@
 #include "display_poll.h"
 #include "menu_ui.h"
 #include "models.h"
+#include "ota_update.h"
 #include "printer_select.h"
 #include "touch_input.h"
 #include "wifi_setup.h"
@@ -178,6 +179,7 @@ lv_obj_t *stateLabel = nullptr;
 lv_obj_t *freshLabel = nullptr;
 lv_obj_t *connIcon = nullptr;
 lv_obj_t *versionLabel = nullptr;
+lv_obj_t *menuUpdateBadge = nullptr;
 lv_obj_t *ipLabel = nullptr;
 lv_obj_t *navRow = nullptr;
 lv_obj_t *ipToast = nullptr;
@@ -3024,6 +3026,17 @@ void ui_begin() {
   lv_label_set_text(menuIcon, LV_SYMBOL_LIST);
   lv_obj_center(menuIcon);
 
+  menuUpdateBadge = lv_obj_create(menuBtn);
+  lv_obj_remove_style_all(menuUpdateBadge);
+  lv_obj_set_size(menuUpdateBadge, 10, 10);
+  lv_obj_set_style_radius(menuUpdateBadge, LV_RADIUS_CIRCLE, 0);
+  lv_obj_set_style_bg_color(menuUpdateBadge, lv_color_hex(COL_ACCENT), 0);
+  lv_obj_set_style_bg_opa(menuUpdateBadge, LV_OPA_COVER, 0);
+  lv_obj_set_style_border_width(menuUpdateBadge, 0, 0);
+  lv_obj_clear_flag(menuUpdateBadge, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_align(menuUpdateBadge, LV_ALIGN_TOP_RIGHT, -5, 4);
+  lv_obj_add_flag(menuUpdateBadge, LV_OBJ_FLAG_HIDDEN);
+
   alertBanner = lv_obj_create(root);
   lv_obj_remove_style_all(alertBanner);
   lv_obj_set_width(alertBanner, lv_pct(100));
@@ -3309,6 +3322,18 @@ void ui_set_ip_address(const String &ip) {
   }
   panelIp = ip;
   refreshFooter();
+}
+
+void ui_refresh_update_badge() {
+  if (!menuUpdateBadge) {
+    return;
+  }
+  const bool show = config().autoCheckUpdates && ota_update_available();
+  if (show) {
+    lv_obj_clear_flag(menuUpdateBadge, LV_OBJ_FLAG_HIDDEN);
+  } else {
+    lv_obj_add_flag(menuUpdateBadge, LV_OBJ_FLAG_HIDDEN);
+  }
 }
 
 bool ui_has_active_alerts() {

@@ -1,6 +1,6 @@
 # Flashing CrowPanel 7″ (ESP32-S3)
 
-Firmware **v0.20.16**. Default hostname: **`crowpanel`** → `http://crowpanel.local/`.
+Firmware **v0.20.17**. Default hostname: **`crowpanel`** → `http://crowpanel.local/`.
 
 ## First install — Web Flasher (recommended)
 

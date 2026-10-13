@@ -583,6 +583,7 @@ void loop() {
   maintainWifi();
   if (WiFi.status() == WL_CONNECTED) {
     ota_loop();
+    ota_auto_check_loop();
     web_portal_loop();
     if (!ota_is_active()) {
       bool polled = false;

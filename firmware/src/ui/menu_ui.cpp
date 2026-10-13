@@ -42,6 +42,7 @@ lv_obj_t *fields[5] = {};
 lv_obj_t *kb = nullptr;
 lv_obj_t *tlsLabel = nullptr;
 lv_obj_t *updateProgressBar = nullptr;
+lv_obj_t *autoCheckLabel = nullptr;
 int fieldCount = 0;
 bool tlsOn = false;
 bool confirmResetArmed = false;
@@ -49,6 +50,18 @@ Pane pane = Pane::Home;
 
 String latestGithubVer;
 String latestGithubUrl;
+
+void syncLatestFromOta() {
+  const String ver = ota_cached_latest_version();
+  if (ver.length()) {
+    latestGithubVer = ver;
+    latestGithubUrl = ota_cached_download_url();
+  }
+}
+
+bool updateBadgeVisible() {
+  return config().autoCheckUpdates && ota_update_available();
+}
 
 void showHome();
 void showFilaman();
@@ -87,6 +100,7 @@ void clearContent() {
   kb = nullptr;
   tlsLabel = nullptr;
   updateProgressBar = nullptr;
+  autoCheckLabel = nullptr;
 }
 
 void onMenuScrollEvent(lv_event_t *event) {
@@ -168,7 +182,8 @@ void addSection(lv_obj_t *parent, const char *text) {
   lv_label_set_text(lbl, text);
 }
 
-void addNavRow(lv_obj_t *parent, const char *text, bool last, lv_event_cb_t cb, void *ud) {
+void addNavRow(lv_obj_t *parent, const char *text, bool last, lv_event_cb_t cb, void *ud,
+               bool badge = false) {
   lv_obj_t *btn = lv_btn_create(parent);
   lv_obj_set_width(btn, lv_pct(100));
   lv_obj_set_height(btn, 48);
@@ -178,7 +193,8 @@ void addNavRow(lv_obj_t *parent, const char *text, bool last, lv_event_cb_t cb, 
   lv_obj_set_style_radius(btn, 0, 0);
   lv_obj_set_style_pad_hor(btn, 8, 0);
   lv_obj_set_flex_flow(btn, LV_FLEX_FLOW_ROW);
-  lv_obj_set_flex_align(btn, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_flex_align(btn, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_style_pad_column(btn, 10, 0);
   if (!last) {
     lv_obj_set_style_border_side(btn, LV_BORDER_SIDE_BOTTOM, 0);
     lv_obj_set_style_border_width(btn, 1, 0);
@@ -189,6 +205,18 @@ void addNavRow(lv_obj_t *parent, const char *text, bool last, lv_event_cb_t cb, 
   lv_obj_set_style_text_font(lbl, &lv_font_montserrat_16, 0);
   lv_obj_set_style_text_color(lbl, lv_color_hex(COL_TEXT), 0);
   lv_label_set_text(lbl, text);
+  lv_obj_set_flex_grow(lbl, 1);
+
+  if (badge) {
+    lv_obj_t *dot = lv_obj_create(btn);
+    lv_obj_remove_style_all(dot);
+    lv_obj_set_size(dot, 10, 10);
+    lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(dot, lv_color_hex(COL_ACCENT), 0);
+    lv_obj_set_style_bg_opa(dot, LV_OPA_COVER, 0);
+    lv_obj_clear_flag(dot, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+  }
+
   lv_obj_t *chev = lv_label_create(btn);
   lv_obj_set_style_text_font(chev, &lv_font_montserrat_14, 0);
   lv_obj_set_style_text_color(chev, lv_color_hex(COL_MUTED), 0);
@@ -454,7 +482,8 @@ void showHome() {
   addNavRow(card, "MQTT", false, [](lv_event_t *) { showMqtt(); }, nullptr);
   addNavRow(card, "Display & Alerts", false, [](lv_event_t *) { showDisplay(); }, nullptr);
   addNavRow(card, "Device & Timezone", false, [](lv_event_t *) { showDevice(); }, nullptr);
-  addNavRow(card, "Firmware Update", false, [](lv_event_t *) { showUpdate(); }, nullptr);
+  addNavRow(card, "Firmware Update", false, [](lv_event_t *) { showUpdate(); }, nullptr,
+            updateBadgeVisible());
   addNavRow(card, "System & Diagnostics", true, [](lv_event_t *) { showSystem(); }, nullptr);
 }
 
@@ -882,6 +911,21 @@ void onCheckUpdates(lv_event_t *) {
   runGithubCheck();
 }
 
+void onAutoCheckToggle(lv_event_t *) {
+  const bool enabled = !config().autoCheckUpdates;
+  config().setAutoCheckUpdates(enabled);
+  ui_refresh_update_badge();
+  if (enabled) {
+    if (autoCheckLabel) {
+      lv_label_set_text(autoCheckLabel, "Automatically check for updates: on");
+    }
+    runGithubCheck();
+  } else {
+    showUpdate();
+    setStatus("Automatic update checks disabled.", COL_MUTED);
+  }
+}
+
 void onInstallGithubUpdate(lv_event_t *) {
   touch_input_cooldown(500);
   if (updateProgressBar) {
@@ -918,13 +962,16 @@ void showUpdate() {
   pane = Pane::Update;
   clearContent();
   lv_label_set_text(titleLabel, "Firmware Update");
+  syncLatestFromOta();
 
   const bool hasLatest = latestGithubVer.length() > 0;
   const bool newerAvailable =
       hasLatest && ota_compare_versions(latestGithubVer, FIRMWARE_VERSION) > 0;
+  const bool autoOn = config().autoCheckUpdates;
 
   if (!hasLatest) {
-    setStatus("Check GitHub for the latest firmware release (keeps all saved settings).",
+    setStatus(autoOn ? "Automatic checks enabled — waiting for the next GitHub poll."
+                     : "Check GitHub for the latest firmware release (keeps all saved settings).",
               COL_MUTED);
   } else if (newerAvailable) {
     setStatus(String("Update available: v") + latestGithubVer, COL_ACCENT);
@@ -964,6 +1011,14 @@ void showUpdate() {
   lv_obj_set_style_radius(updateProgressBar, 5, LV_PART_MAIN);
   lv_obj_set_style_radius(updateProgressBar, 5, LV_PART_INDICATOR);
   lv_obj_add_flag(updateProgressBar, LV_OBJ_FLAG_HIDDEN);
+
+  lv_obj_t *autoBtn = makeAction(col, "", autoOn, onAutoCheckToggle, nullptr);
+  autoCheckLabel = lv_obj_get_child(autoBtn, 0);
+  if (autoCheckLabel) {
+    lv_label_set_text(autoCheckLabel,
+                      autoOn ? "Automatically check for updates: on"
+                             : "Automatically check for updates: off");
+  }
 
   makeAction(col, (String(LV_SYMBOL_REFRESH) + "  Check for updates").c_str(), !hasLatest,
              onCheckUpdates, nullptr);

@@ -31,6 +31,7 @@ struct AppConfig {
   int spoolCritPct = SPOOL_CRITICAL_PERCENT;  // 10, 15, 20
   int idleReturnSec = 60;           // 0 (off), 60, 180
   String displayTimezone;
+  bool autoCheckUpdates = false;    // periodically poll GitHub for newer firmware
 
   void load();               // read all fields from NVS (macro = default)
   void save() const;         // persist all fields to NVS
@@ -43,6 +44,7 @@ struct AppConfig {
   void setDisplayBrightness(int fullPct, int dimPct);
   void setSpoolThresholds(int lowPct, int critPct);
   void setIdleReturnSec(int sec);
+  void setAutoCheckUpdates(bool enabled);
 };
 
 // Process-wide config singleton (house style, like `displayMqtt`).
