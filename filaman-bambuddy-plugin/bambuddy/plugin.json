@@ -1,0 +1,112 @@
+{
+  "plugin_key": "bambuddy",
+  "name": "Bambuddy",
+  "driver_key": "bambuddy",
+  "plugin_type": "driver",
+  "version": "1.4.0",
+  "description": "Connects to printers managed by Bambuddy. Receives real-time AMS data and idempotent modern spool usage events via WebSocket, with legacy print completion compatibility. Exposes display_snapshot for CrowPanel HTTP dashboards.",
+  "author": "FilaMan",
+  "homepage": "https://www.filaman.app",
+  "dependencies": ["websockets>=12.0", "httpx>=0.27.0"],
+  "config_schema": {
+    "type": "object",
+    "properties": {
+      "sync_enabled": {
+        "type": "string",
+        "title": "Inventar-Synchronisation",
+        "description": "Wenn aktiviert, werden FilaMan-Spulen automatisch ins Bambuddy-Inventar synchronisiert. Bei Deaktivierung nutzt Bambuddy die Spoolman API.",
+        "enum": ["enabled", "disabled"],
+        "default": "enabled"
+      },
+      "printer_write_mode": {
+        "type": "string",
+        "title": "Printer Write Mode",
+        "description": "Full applies filament and calibration settings to the printer; Inventory only keeps Bambuddy inventory and assignment state without printer material writes.",
+        "enum": ["full", "inventory_only"],
+        "enumNames": ["Full", "Inventory only"],
+        "enumNamesByLocale": {
+          "en": ["Full", "Inventory only"],
+          "ru": ["Полный режим", "Только инвентарь"],
+          "uk": ["Повний режим", "Лише інвентар"]
+        },
+        "default": "full"
+      },
+      "bambuddy_url": {
+        "type": "string",
+        "title": "Bambuddy URL",
+        "description": "Base URL of your Bambuddy instance, e.g. http://192.168.1.50:8080"
+      },
+      "api_key": {
+        "type": "string",
+        "title": "API Key",
+        "description": "Bambuddy API key (create in Bambuddy under Settings → API Keys)"
+      },
+      "printer_id": {
+        "type": "integer",
+        "title": "Bambuddy Printer ID",
+        "description": "Internal ID of the printer in Bambuddy"
+      },
+      "reconnect_interval_seconds": {
+        "type": "integer",
+        "title": "WebSocket Reconnect Interval (Seconds)",
+        "description": "How long to wait before reconnecting after a WebSocket disconnect",
+        "default": 30,
+        "minimum": 5,
+        "maximum": 300
+      },
+      "sync_interval_seconds": {
+        "type": "integer",
+        "title": "Sync-Intervall (Sekunden)",
+        "description": "Wie oft FilaMan-Spulen mit Bambuddy abgeglichen werden",
+        "default": 3600,
+        "minimum": 60,
+        "maximum": 86400
+      },
+      "per_model_profiles": {
+        "type": "string",
+        "title": "Per-Model Slicer Profiles",
+        "description": "When enabled, cloud profiles are stored per printer model (P2S, H2C, etc.) with automatic nozzle resolution. Disable to fall back to single-profile behavior.",
+        "enum": ["enabled", "disabled"],
+        "default": "enabled"
+      },
+      "per_printer_profiles": {
+        "type": "string",
+        "title": "Per-Printer Slicer Profiles (legacy alias)",
+        "description": "Deprecated alias for per_model_profiles. When enabled, picking a cloud profile resolves and stores a separate printer/nozzle-specific variant (PFUS) per printer model, and the AMS configure call sends the correct profile as setting_id.",
+        "enum": ["enabled", "disabled"],
+        "default": "enabled"
+      }
+    },
+    "required": ["bambuddy_url", "api_key", "printer_id"]
+  },
+  "capabilities": {
+    "has_slots": true,
+    "has_ams": true,
+    "supports_auto_match": true
+  },
+  "printer_params": {
+    "target_types": ["filament_printer_param", "spool_printer_param"],
+    "fields": [
+      {"key": "bambu_idx", "label": "Bambu Material Index", "field_type": "dropdown", "options_file": "bambu_filaments.json"},
+      {"key": "bambu_tray_idx", "label": "Tray Info Index", "field_type": "text"},
+      {"key": "bambu_setting_id", "label": "Setting ID", "field_type": "text"},
+      {"key": "bambu_cali_idx", "label": "Calibration Index", "field_type": "text"},
+      {"key": "bambu_k_value", "label": "K Value", "field_type": "number"},
+      {"key": "bambu_flow_ratio", "label": "Flow Ratio", "field_type": "number"},
+      {"key": "bambu_bed_temp", "label": "Bed Temperature", "field_type": "number"},
+      {"key": "bambu_nozzle_temp_min", "label": "Nozzle Temp Min", "field_type": "number"},
+      {"key": "bambu_nozzle_temp_max", "label": "Nozzle Temp Max", "field_type": "number"},
+      {"key": "bambu_default_nozzle_mm", "label": "Default Nozzle Diameter (mm)", "field_type": "number", "description": "Only used when Bambuddy does not report the installed nozzle size. Update when you swap nozzles."},
+      {"key": "bambu_max_volumetric_speed", "label": "Max Volumetric Speed", "field_type": "number"},
+      {"key": "bambuddy_spool_id", "label": "Bambuddy Spool ID", "field_type": "text", "system": true, "target_type": "spool_printer_param"}
+    ],
+    "migration": {
+      "legacy_renames": {
+        "bambu_cali_id": "bambu_cali_idx",
+        "bambu_k": "bambu_k_value",
+        "bambu_max_volspeed": "bambu_max_volumetric_speed",
+        "bambu_nozzle_temp": "bambu_nozzle_temp_min"
+      }
+    }
+  }
+}
