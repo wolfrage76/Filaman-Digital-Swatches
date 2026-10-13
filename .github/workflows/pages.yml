@@ -2,7 +2,7 @@ name: Deploy USB flasher (GitHub Pages)
 
 on:
   push:
-    branches: [main, ams-view]
+    branches: [main]
     paths:
       - "docs/**"
       - ".github/workflows/pages.yml"
