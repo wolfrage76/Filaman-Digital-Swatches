@@ -145,9 +145,10 @@
         <div class="choice keep">
           <h2>Keep Settings</h2>
           <p>
-            Updates the firmware only. Keeps Wi‑Fi, FilaMan URL/key, printer
-            choice, and OTA password already saved on the panel.
-            Use this for normal upgrades.
+            Updates firmware without wiping NVS. Keeps Wi‑Fi, FilaMan URL/key,
+            printer choice, and OTA password.
+            If the installer asks to <b>erase</b> the device, choose
+            <b>No</b> / don’t erase — that is what preserves settings.
           </p>
           <esp-web-install-button manifest="./manifest-update.json">
             <button slot="activate" type="button">Keep Settings &amp; Update</button>
@@ -157,9 +158,9 @@
         <div class="choice reset">
           <h2>Factory Reset</h2>
           <p>
-            Full install and erase. Wipes all saved settings and loads a clean
-            image. Use for first-time flash, or when the panel will not boot /
-            the partition layout changed.
+            Full install and erase. Wipes all saved settings. Use for first-time
+            flash, a blank screen after a bad update, or when Keep Settings
+            cannot recover the panel.
           </p>
           <esp-web-install-button manifest="./manifest-factory.json">
             <button slot="activate" type="button">Factory Reset &amp; Install</button>
@@ -170,8 +171,8 @@
       <p class="note">
         Needs <b>Chrome or Edge</b> (Web Serial) and this page over <b>HTTPS</b>
         (or <code>http://localhost</code>). Safari and Firefox are not supported.
-        If Keep Settings fails after a major release, use Factory Reset once, then
-        re-enter Wi‑Fi and FilaMan.
+        <b>Blank screen after Keep Settings?</b> Use Factory Reset once, then set
+        up Wi‑Fi / FilaMan again.
       </p>
     </div>
 

@@ -17,7 +17,7 @@ Open the flasher in **Chrome** or **Edge** (Web Serial). Use a USB **data** cabl
 ### → [Filaman Digital Swatches — USB Flasher](https://wolfrage76.github.io/Filaman-Digital-Swatches/)
 
 1. Plug in the CrowPanel.
-2. Choose **Keep Settings & Update** (preserves Wi‑Fi / FilaMan) or **Factory Reset & Install** (wipes saved settings — use for first-time flash).
+2. Choose **Keep Settings & Update** (preserves Wi‑Fi / FilaMan — if asked to erase, say **No**) or **Factory Reset & Install** (wipes settings; use for first-time flash or a blank screen).
 3. Pick the CrowPanel serial port and wait until flashing finishes, then power-cycle or reset the panel.
 
 ### 2. Connect WiFi and FilaMan

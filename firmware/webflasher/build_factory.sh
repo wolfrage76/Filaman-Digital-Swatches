@@ -45,9 +45,13 @@ $ESPTOOL --chip esp32s3 merge-bin -o "$OUT/factory.bin" \
   0x10000 "$B/firmware.bin"
 
 cp -f "$B/firmware.bin" "$OUT/firmware.bin"
+cp -f "$B/bootloader.bin" "$OUT/bootloader.bin"
+cp -f "$B/partitions.bin" "$OUT/partitions.bin"
 cp -f "$BOOT_APP0" "$OUT/boot_app0.bin"
 cp -f "$OUT/factory.bin" "$DOCS_OUT/factory.bin"
 cp -f "$OUT/firmware.bin" "$DOCS_OUT/firmware.bin"
+cp -f "$OUT/bootloader.bin" "$DOCS_OUT/bootloader.bin"
+cp -f "$OUT/partitions.bin" "$DOCS_OUT/partitions.bin"
 cp -f "$OUT/boot_app0.bin" "$DOCS_OUT/boot_app0.bin"
 
 # Keep published manifest versions in sync with firmware.
