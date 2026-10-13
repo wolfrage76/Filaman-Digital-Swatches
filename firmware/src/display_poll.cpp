@@ -308,11 +308,11 @@ bool heapAllowsPoll() {
   return false;
 }
 
-void applySnapshot(JsonDocument &doc) {
+bool applySnapshot(JsonDocument &doc) {
   // FilaMan Display API, schema v3: {"schema_version":3,"printers":[{...}]}
   JsonObject p = doc["printers"][0].as<JsonObject>();
   if (p.isNull()) {
-    return;
+    return false;
   }
 
   BridgeHealth health;
@@ -588,6 +588,7 @@ void applySnapshot(JsonDocument &doc) {
     printer.activeColorCount = 1;
   }
   ui_update_printer(printer);
+  return true;
 }
 
 bool idListed(const PrinterOption *printers, int count, int id) {
@@ -662,6 +663,9 @@ void refreshPrinterList() {
       chosen = 0;
       for (int i = 0; i < count; ++i) {
         chosen = printers[i].id.toInt();
+        if (chosen > 0) {
+          break;
+        }
       }
     }
     if (pinned > 0 && chosen > 0 && chosen != pinned) {
@@ -720,10 +724,19 @@ void pollSnapshot() {
     ui_set_connection_status(String("FilaMan: ") + r.error);
     return;
   }
+  if (!applySnapshot(doc)) {
+    lastOk = false;
+    if (consecutiveFails < 1000) {
+      consecutiveFails++;
+    }
+    snprintf(pollStatus, sizeof(pollStatus), "snapshot: empty printer[]");
+    Serial.println("display_poll: snapshot missing printers[0]");
+    ui_set_connection_status("FilaMan: empty printer response");
+    return;
+  }
   lastOk = true;
   consecutiveFails = 0;
   snprintf(pollStatus, sizeof(pollStatus), "linked printer %d", activePrinterId);
-  applySnapshot(doc);
   ui_set_connection_status("FilaMan linked");
 }
 

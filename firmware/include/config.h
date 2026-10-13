@@ -13,7 +13,7 @@
 #endif
 
 #ifndef MQTT_HOST
-#define MQTT_HOST "192.168.1.10"
+#define MQTT_HOST ""
 #endif
 
 #ifndef MQTT_PORT
@@ -32,27 +32,23 @@
 #define DISPLAY_TOPIC_PREFIX "display/amsview"
 #endif
 
-// --- FilaMan kiosk (filament select / spool create / slicer profiles via REST) ---
+// --- FilaMan Display API ---
 #ifndef FILAMAN_BASE_URL
-#define FILAMAN_BASE_URL "http://192.168.1.209"  // origin, e.g. http://host or https://host
+#define FILAMAN_BASE_URL ""  // origin, e.g. http://host:8083 or https://host
 #endif
 #ifndef FILAMAN_API_KEY
 #define FILAMAN_API_KEY ""  // "uak.1.<secret>" — create once in the FilaMan UI
 #endif
-// Bambuddy printer used for cloud-preset (slicer profile) lookups. 0 = auto-detect
-// the first healthy Bambuddy printer via GET /printers.
+// FilaMan printer ID to monitor. 0 = auto-detect the first printer via GET /api/v1/printers.
 #ifndef FILAMAN_PRINTER_ID
 #define FILAMAN_PRINTER_ID 0
-#endif
-#ifndef FILAMAN_PRINTER_MODEL
-#define FILAMAN_PRINTER_MODEL "P2S"  // model token for cloud-preset filtering
 #endif
 // Skip TLS cert validation for a LAN https FilaMan (ignored for http URLs).
 #ifndef FILAMAN_TLS_INSECURE
 #define FILAMAN_TLS_INSECURE 1
 #endif
 
-constexpr const char *FIRMWARE_VERSION = "0.20.14";
+constexpr const char *FIRMWARE_VERSION = "0.20.15";
 constexpr int MQTT_SCHEMA_VERSION = 2;
 
 #ifndef OTA_HOSTNAME

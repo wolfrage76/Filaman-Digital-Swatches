@@ -1,6 +1,6 @@
 # Flashing CrowPanel 7″ (ESP32-S3)
 
-Firmware **v0.20.14**. Default hostname: **`crowpanel`** → `http://crowpanel.local/`.
+Firmware **v0.20.15**. Default hostname: **`crowpanel`** → `http://crowpanel.local/`.
 
 ## First install — Web Flasher (recommended)
 
@@ -25,7 +25,7 @@ Only needed for local builds, partition changes, or scripted OTA.
 
 ### PlatformIO USB flash
 
-Daily env: **`crowpanel_7_idf`**. Always pass `-e crowpanel_7_idf` (a bare upload picks the older `crowpanel_7_hmi` env).
+Daily env: **`crowpanel_7_idf`** (set as `default_envs` in `platformio.ini`).
 
 ```bash
 cd firmware
@@ -44,7 +44,7 @@ mv include/secrets.h include/secrets.h.local   # if present
 mv include/secrets.h.local include/secrets.h
 ```
 
-Writes `firmware/webflasher/firmware/factory.bin` and `docs/firmware/factory.bin`.
+Writes `docs/firmware/factory.bin` and the split keep-settings images (`bootloader.bin`, `partitions.bin`, `boot_app0.bin`, `firmware.bin`).
 
 ### LAN OTA (script / PlatformIO)
 

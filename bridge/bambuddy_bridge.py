@@ -66,7 +66,7 @@ class Config:
     mqtt_tls: bool = env_bool("MQTT_TLS", False)
     mqtt_client_id: str = os.getenv("MQTT_CLIENT_ID", "bambuddy-h2c-display-bridge")
     bambuddy_topic_prefix: str = os.getenv("BAMBUDDY_TOPIC_PREFIX", "bambuddy").strip("/")
-    display_topic_prefix: str = os.getenv("DISPLAY_TOPIC_PREFIX", "display/h2c").strip("/")
+    display_topic_prefix: str = os.getenv("DISPLAY_TOPIC_PREFIX", "display/amsview").strip("/")
     # ETA clock timezone (later configurable via web config). Default US Eastern (EST/EDT).
     display_tz: str = os.getenv("DISPLAY_TZ", "America/New_York")
     poll_seconds: int = int(os.getenv("POLL_SECONDS", "60"))
@@ -1297,7 +1297,9 @@ class DisplayHttpHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802
         path = self.path.split("?", 1)[0]
-        if path in {"/display/h2c/state", "/display/h2c/stat", "/state", "/stat"}:
+        state_route = f"/{CONFIG.display_topic_prefix}/state"
+        stat_route = f"/{CONFIG.display_topic_prefix}/stat"
+        if path in {state_route, stat_route, "/display/amsview/state", "/display/h2c/state", "/display/h2c/stat", "/state", "/stat"}:
             self._send_json(200, get_display_state())
             return
         if path in {"/health", "/"}:
@@ -1308,7 +1310,7 @@ class DisplayHttpHandler(BaseHTTPRequestHandler):
                     "ok": True,
                     "bridge_version": BRIDGE_VERSION,
                     "updated_at": state.get("updated_at", 0),
-                    "state_path": "/display/h2c/state",
+                    "state_path": state_route,
                 },
             )
             return
@@ -1323,9 +1325,10 @@ def start_display_http_server() -> ThreadingHTTPServer | None:
     thread = threading.Thread(target=server.serve_forever, name="display-http", daemon=True)
     thread.start()
     LOGGER.info(
-        "Display HTTP API on http://%s:%d/display/h2c/state",
+        "Display HTTP API on http://%s:%d/%s/state",
         CONFIG.display_http_host,
         CONFIG.display_http_port,
+        CONFIG.display_topic_prefix,
     )
     return server
 

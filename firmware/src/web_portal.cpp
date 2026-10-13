@@ -106,6 +106,7 @@ void handleRoot() {
   h += " style='width:auto'>TLS insecure (LAN https)</label>";
   h += "</fieldset><fieldset><legend>Device</legend>";
   h += field("Hostname", "otaHost", c.otaHostname, "text");
+  h += field("Timezone (POSIX TZ, e.g. EST5EDT,M3.2.0,M11.1.0)", "tz", c.displayTimezone, "text");
   h += pwField("OTA / config password", "otaPass");
   h += "</fieldset>";
   h += "<button type=submit>Save &amp; Reboot</button></form>";
@@ -176,6 +177,7 @@ void handleSave() {
   if (server.hasArg("fmPrinter")) c.filamanPrinterId = server.arg("fmPrinter").toInt();
   c.filamanTlsInsecure = server.hasArg("fmTls");  // unchecked box sends nothing
   if (server.hasArg("otaHost")) c.otaHostname = server.arg("otaHost");
+  if (server.hasArg("tz") && server.arg("tz").length()) c.displayTimezone = server.arg("tz");
   c.otaPassword = keepIfBlank("otaPass", c.otaPassword);
   c.save();
 

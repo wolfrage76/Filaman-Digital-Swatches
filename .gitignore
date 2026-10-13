@@ -227,9 +227,12 @@ __marimo__/
 .streamlit/secrets.toml
 
 # Local / generated (CrowPanel)
+.DS_Store
+._*
 firmware/managed_components/
 firmware/.dummy/
 firmware/.pio/
+firmware/webflasher/firmware/
 bridge/nohup.out
 **/__pycache__/
 firmware/components/arduino

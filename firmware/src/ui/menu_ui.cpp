@@ -27,7 +27,7 @@ lv_obj_t *overlay = nullptr;
 lv_obj_t *titleLabel = nullptr;
 lv_obj_t *statusLabel = nullptr;
 lv_obj_t *content = nullptr;
-lv_obj_t *fields[4] = {};
+lv_obj_t *fields[5] = {};
 lv_obj_t *kb = nullptr;
 lv_obj_t *tlsLabel = nullptr;
 int fieldCount = 0;
@@ -57,7 +57,7 @@ void clearContent() {
   if (content) {
     lv_obj_clean(content);
   }
-  for (int i = 0; i < 4; ++i) {
+  for (int i = 0; i < 5; ++i) {
     fields[i] = nullptr;
   }
   fieldCount = 0;
@@ -190,7 +190,7 @@ lv_obj_t *addField(lv_obj_t *parent, const char *caption, const char *value, boo
   }
   lv_obj_add_event_cb(ta, onFieldFocus, LV_EVENT_FOCUSED, nullptr);
   lv_obj_add_event_cb(ta, onFieldFocus, LV_EVENT_CLICKED, nullptr);
-  if (fieldCount < 4) {
+  if (fieldCount < 5) {
     fields[fieldCount++] = ta;
   }
   return ta;
@@ -230,9 +230,17 @@ void onSave(lv_event_t *) {
     if (pass.length()) {
       next.mqttPassword = pass;
     }
+    const String pfx = fieldText(4);
+    if (pfx.length()) {
+      next.topicPrefix = pfx;
+    }
   } else if (pane == Pane::Device) {
     next.otaHostname = fieldText(0);
-    const String pass = fieldText(1);
+    const String tz = fieldText(1);
+    if (tz.length()) {
+      next.displayTimezone = tz;
+    }
+    const String pass = fieldText(2);
     if (pass.length()) {
       next.otaPassword = pass;
     }
@@ -340,6 +348,7 @@ void showMqtt() {
   addField(card, "Port", port.c_str(), false);
   addField(card, "Username", config().mqttUsername.c_str(), false);
   addField(card, "Password", "", true);
+  addField(card, "Topic prefix", config().topicPrefix.c_str(), false);
   makeAction(col, "Save & reboot", true, onSave, nullptr);
   makeAction(col, "Back", false, onBackHome, nullptr);
 }
@@ -449,11 +458,12 @@ void showDevice() {
   pane = Pane::Device;
   clearContent();
   lv_label_set_text(titleLabel, "Device");
-  setStatus("Hostname and the OTA / config password.", COL_MUTED);
+  setStatus("Hostname, timezone, and the OTA / config password.", COL_MUTED);
 
   lv_obj_t *col = makeScroll();
   lv_obj_t *card = makeCard(col);
   addField(card, "Hostname", config().otaHostname.c_str(), false);
+  addField(card, "Timezone (POSIX TZ)", config().displayTimezone.c_str(), false);
   addField(card, "OTA / config password", "", true);
   makeAction(col, "Save & reboot", true, onSave, nullptr);
   makeAction(col, "Back", false, onBackHome, nullptr);

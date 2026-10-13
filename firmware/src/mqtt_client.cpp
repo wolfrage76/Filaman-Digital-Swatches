@@ -1,6 +1,7 @@
 #include "mqtt_client.h"
 
 #include <ArduinoJson.h>
+#include <WiFi.h>
 #include <math.h>
 
 #include "app_config.h"
@@ -190,6 +191,9 @@ void DisplayMqtt::begin() {
 
 void DisplayMqtt::loop() {
   tookWork_ = false;
+  if (!config().mqttHost.length()) {
+    return;
+  }
   if (!client_.connected()) {
     reconnect();
     tookWork_ = true;
@@ -236,12 +240,16 @@ void DisplayMqtt::reconnect() {
   lastReconnectAttempt_ = now;
 
   publishStatus("MQTT connecting");
+  uint8_t mac[6] = {};
+  WiFi.macAddress(mac);
+  char clientId[32];
+  snprintf(clientId, sizeof(clientId), "crowpanel-%02x%02x%02x", mac[3], mac[4], mac[5]);
   bool connected = false;
   if (config().mqttUsername.length() > 0) {
-    connected = client_.connect("crowpanel-ams", config().mqttUsername.c_str(),
+    connected = client_.connect(clientId, config().mqttUsername.c_str(),
                                 config().mqttPassword.c_str());
   } else {
-    connected = client_.connect("crowpanel-ams");
+    connected = client_.connect(clientId);
   }
 
   if (connected) {
