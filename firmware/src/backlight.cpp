@@ -5,8 +5,6 @@
 namespace {
 
 constexpr int BACKLIGHT_PIN = 2;
-constexpr uint8_t DUTY_FULL = 255;
-constexpr uint8_t DUTY_DIM = 48;
 constexpr uint32_t PWM_HZ = 5000;
 constexpr uint8_t PWM_BITS = 8;
 
@@ -17,6 +15,12 @@ unsigned long lastActivityMs = 0;
 bool swallowing = false;
 bool pwmOk = false;
 
+uint8_t dutyForPct(int pct) {
+  if (pct <= 0) return 0;
+  if (pct >= 100) return 255;
+  return static_cast<uint8_t>((pct * 255 + 50) / 100);
+}
+
 void writeDuty(uint8_t duty) {
   if (!pwmOk) {
     digitalWrite(BACKLIGHT_PIN, duty > 0 ? HIGH : LOW);
@@ -25,18 +29,22 @@ void writeDuty(uint8_t duty) {
   ledcWrite(BACKLIGHT_PIN, duty);
 }
 
+void applyLevelDuty(Level lv) {
+  if (lv == Level::Full) {
+    writeDuty(dutyForPct(config().displayFullBrightPct));
+  } else if (lv == Level::Dim) {
+    writeDuty(dutyForPct(config().displayDimBrightPct));
+  } else {
+    writeDuty(0);
+  }
+}
+
 void setLevel(Level next) {
   if (next == level) {
     return;
   }
   level = next;
-  if (next == Level::Full) {
-    writeDuty(DUTY_FULL);
-  } else if (next == Level::Dim) {
-    writeDuty(DUTY_DIM);
-  } else {
-    writeDuty(0);
-  }
+  applyLevelDuty(level);
 }
 
 }  // namespace
@@ -44,9 +52,15 @@ void setLevel(Level next) {
 void backlight_begin() {
   pinMode(BACKLIGHT_PIN, OUTPUT);
   pwmOk = ledcAttach(BACKLIGHT_PIN, PWM_HZ, PWM_BITS);
-  writeDuty(DUTY_FULL);
   level = Level::Full;
+  applyLevelDuty(level);
   lastActivityMs = millis();
+}
+
+void backlight_apply() {
+  lastActivityMs = millis();
+  level = Level::Full;
+  applyLevelDuty(level);
 }
 
 void backlight_loop() {

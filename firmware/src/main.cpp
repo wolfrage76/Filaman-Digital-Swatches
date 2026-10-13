@@ -44,8 +44,10 @@ uint32_t maxLvglUs = 0;
 uint32_t maxNetUs = 0;
 
 constexpr int PANEL_ENABLE_PIN = 38;
-// Small offscreen strips in internal SRAM. Keep modest so bounce buffers fit.
-constexpr int LVGL_BUF_LINES = 8;
+// Offscreen draw buffers in internal SRAM (24 lines = ~38 KB per buffer).
+// Rendering into SRAM avoids Octal-PSRAM round-trips for every drawn pixel;
+// the RGB framebuffer itself stays in PSRAM with SRAM bounce strips for scanout.
+constexpr int LVGL_BUF_LINES = 24;
 // RGB scanout DMA reads these SRAM bounce strips; CPU copies from the PSRAM FB.
 // 10 lines × 800 px is the Espressif-recommended starting point for 800×480.
 constexpr size_t BOUNCE_BUFFER_PX = static_cast<size_t>(SCREEN_WIDTH) * 10;
@@ -119,7 +121,9 @@ uint32_t Cache_Get_DCache_Line_Size(void);
 // ROM Cache_WriteBack_Addr rejects a range that is not a whole cache line and
 // writes nothing. The bounce refill then drops those dirty lines, so a partial
 // LVGL strip stays blank until some later update happens to cover it.
-void writeBackFramebuffer(const void *start, size_t bytes) {
+// IRAM_ATTR: the hot blit path must not fetch instructions over the PSRAM bus
+// it is saturating (firmware runs XIP from PSRAM in this build).
+void IRAM_ATTR writeBackFramebuffer(const void *start, size_t bytes) {
   uint16_t *fb = gfx->getFramebuffer();
   if (!fb || !start || bytes == 0) {
     return;
@@ -150,7 +154,7 @@ void writeBackFramebuffer(const void *start, size_t bytes) {
   }
 }
 
-void blitStrip(int x, int y, const uint16_t *src, int w, int h) {
+void IRAM_ATTR blitStrip(int x, int y, const uint16_t *src, int w, int h) {
   uint16_t *fb = gfx->getFramebuffer();
   if (!fb || !src || w <= 0 || h <= 0) {
     return;
@@ -165,13 +169,21 @@ void blitStrip(int x, int y, const uint16_t *src, int w, int h) {
   if (y + h > SCREEN_HEIGHT) {
     h = SCREEN_HEIGHT - y;
   }
+  if (x == 0 && w == SCREEN_WIDTH && stride == SCREEN_WIDTH) {
+    uint16_t *dst = fb + (static_cast<size_t>(y) * SCREEN_WIDTH);
+    const size_t totalBytes = static_cast<size_t>(SCREEN_WIDTH) * static_cast<size_t>(h) * sizeof(uint16_t);
+    memcpy(dst, src, totalBytes);
+    writeBackFramebuffer(dst, totalBytes);
+    return;
+  }
+  uint16_t *firstDst = fb + (static_cast<size_t>(y) * SCREEN_WIDTH) + x;
   for (int row = 0; row < h; ++row) {
     uint16_t *dst = fb + (static_cast<size_t>(y + row) * SCREEN_WIDTH) + x;
     const size_t nbytes = static_cast<size_t>(w) * sizeof(uint16_t);
     memcpy(dst, src + static_cast<size_t>(row) * stride, nbytes);
-    // Commit this row before the bounce ISR can invalidate it.
-    writeBackFramebuffer(dst, nbytes);
   }
+  const uint16_t *lastEnd = fb + (static_cast<size_t>(y + h - 1) * SCREEN_WIDTH) + x + w;
+  writeBackFramebuffer(firstDst, static_cast<size_t>(lastEnd - firstDst) * sizeof(uint16_t));
 }
 
 // Partial mode: LVGL renders offscreen, so the panel never scans out a
@@ -180,12 +192,11 @@ void flushDisplay(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_
   const int32_t w = area->x2 - area->x1 + 1;
   const int32_t h = area->y2 - area->y1 + 1;
   blitStrip(area->x1, area->y1, reinterpret_cast<const uint16_t *>(&color_p->full), w, h);
-  // Let WiFi/IDLE run between strips so RGB DMA is not starved for a full refresh.
-  yield();
 #if !DISPLAY_USE_BOUNCE_BUFFER
   // Direct-PSRAM mode only: hand the PSRAM bus back to scanout after each strip so a
   // full-screen repaint's write burst can't starve the LCD FIFO (black flash). With
   // bounce buffers, scanout reads SRAM and this delay is pure wasted latency.
+  yield();
   delayMicroseconds(20 + static_cast<uint32_t>(h) * 12);
 #endif
   lv_disp_flush_ready(disp);
@@ -231,6 +242,8 @@ void setupTouch() {
 }
 
 lv_color_t *allocDrawBuffer(size_t pixels) {
+  // SRAM first: the CPU renders every pixel through these buffers, and SRAM
+  // has no SPI-bus latency. Falls back to PSRAM only if SRAM is exhausted.
   lv_color_t *buf = static_cast<lv_color_t *>(
       heap_caps_malloc(pixels * sizeof(lv_color_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
   if (!buf) {

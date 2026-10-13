@@ -1,10 +1,19 @@
 #include "menu_ui.h"
 
+#include <PubSubClient.h>
+#include <WiFi.h>
+#include <WiFiClient.h>
+#include <esp_heap_caps.h>
 #include <lvgl.h>
 
 #include "app_config.h"
+#include "backlight.h"
 #include "config.h"
+#include "display_poll.h"
+#include "filaman_client.h"
+#include "ota_update.h"
 #include "printer_select.h"
+#include "touch_input.h"
 #include "ui.h"
 #include "wifi_setup.h"
 
@@ -20,8 +29,10 @@ constexpr uint32_t COL_BORDER = 0x2A3544;
 constexpr uint32_t COL_TEXT = 0xF2F5F8;
 constexpr uint32_t COL_MUTED = 0x8B98A8;
 constexpr uint32_t COL_ACCENT = 0x3DDC97;
+constexpr uint32_t COL_WARN = 0xFFB020;
+constexpr uint32_t COL_DANGER = 0xFF5C6A;
 
-enum class Pane { Home, Filaman, Mqtt, Device, Display };
+enum class Pane { Home, Filaman, Mqtt, Device, Display, Update, System };
 
 lv_obj_t *overlay = nullptr;
 lv_obj_t *titleLabel = nullptr;
@@ -30,15 +41,23 @@ lv_obj_t *content = nullptr;
 lv_obj_t *fields[5] = {};
 lv_obj_t *kb = nullptr;
 lv_obj_t *tlsLabel = nullptr;
+lv_obj_t *updateProgressBar = nullptr;
 int fieldCount = 0;
 bool tlsOn = false;
+bool confirmResetArmed = false;
 Pane pane = Pane::Home;
+
+String latestGithubVer;
+String latestGithubUrl;
 
 void showHome();
 void showFilaman();
 void showMqtt();
 void showDevice();
 void showDisplay();
+void showUpdate();
+void showSystem();
+void onMenuScrollEvent(lv_event_t *event);
 
 void setStatus(const String &text, uint32_t color) {
   if (!statusLabel) {
@@ -54,6 +73,10 @@ void setStatus(const String &text, uint32_t color) {
 }
 
 void clearContent() {
+  touch_input_cooldown(260);
+  if (lv_indev_t *indev = lv_indev_get_act()) {
+    lv_indev_wait_release(indev);
+  }
   if (content) {
     lv_obj_clean(content);
   }
@@ -63,6 +86,20 @@ void clearContent() {
   fieldCount = 0;
   kb = nullptr;
   tlsLabel = nullptr;
+  updateProgressBar = nullptr;
+}
+
+void onMenuScrollEvent(lv_event_t *event) {
+  lv_obj_t *col = lv_event_get_target(event);
+  if (!col) {
+    return;
+  }
+  if (lv_event_get_code(event) == LV_EVENT_SCROLL_BEGIN) {
+    lv_obj_set_scrollbar_mode(col, LV_SCROLLBAR_MODE_OFF);
+  } else {
+    lv_obj_set_scrollbar_mode(col, LV_SCROLLBAR_MODE_AUTO);
+    lv_obj_invalidate(col);
+  }
 }
 
 lv_obj_t *makeScroll() {
@@ -73,7 +110,14 @@ lv_obj_t *makeScroll() {
   lv_obj_set_style_min_height(col, 0, 0);
   lv_obj_set_flex_flow(col, LV_FLEX_FLOW_COLUMN);
   lv_obj_set_style_pad_row(col, 10, 0);
+  lv_obj_set_style_pad_bottom(col, 16, 0);
   lv_obj_set_scroll_dir(col, LV_DIR_VER);
+  // No scrollbar overlay while scrolling: it is a masked rounded rect
+  // repainted every scroll frame. Shown again once the list settles.
+  lv_obj_set_scrollbar_mode(col, LV_SCROLLBAR_MODE_OFF);
+  lv_obj_add_flag(col, LV_OBJ_FLAG_SCROLL_MOMENTUM | LV_OBJ_FLAG_SCROLL_ELASTIC);
+  lv_obj_add_event_cb(col, onMenuScrollEvent, LV_EVENT_SCROLL_BEGIN, nullptr);
+  lv_obj_add_event_cb(col, onMenuScrollEvent, LV_EVENT_SCROLL_END, nullptr);
   return col;
 }
 
@@ -86,7 +130,7 @@ lv_obj_t *makeCard(lv_obj_t *parent) {
   lv_obj_set_style_bg_opa(card, LV_OPA_COVER, 0);
   lv_obj_set_style_border_width(card, 1, 0);
   lv_obj_set_style_border_color(card, lv_color_hex(COL_BORDER), 0);
-  lv_obj_set_style_radius(card, 12, 0);
+  lv_obj_set_style_radius(card, 0, 0);
   lv_obj_set_style_pad_all(card, 12, 0);
   lv_obj_set_style_pad_row(card, 8, 0);
   lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
@@ -95,7 +139,7 @@ lv_obj_t *makeCard(lv_obj_t *parent) {
 
 void styleButton(lv_obj_t *btn, bool accent) {
   lv_obj_set_style_min_height(btn, 46, 0);
-  lv_obj_set_style_radius(btn, 10, 0);
+  lv_obj_set_style_radius(btn, 0, 0);
   lv_obj_set_style_border_width(btn, accent ? 0 : 1, 0);
   lv_obj_set_style_border_color(btn, lv_color_hex(COL_BORDER), 0);
   lv_obj_set_style_bg_color(btn, lv_color_hex(accent ? COL_ACCENT : COL_SURFACE_2), 0);
@@ -131,7 +175,7 @@ void addNavRow(lv_obj_t *parent, const char *text, bool last, lv_event_cb_t cb, 
   lv_obj_set_style_bg_opa(btn, LV_OPA_TRANSP, 0);
   lv_obj_set_style_border_width(btn, 0, 0);
   lv_obj_set_style_shadow_width(btn, 0, 0);
-  lv_obj_set_style_radius(btn, 8, 0);
+  lv_obj_set_style_radius(btn, 0, 0);
   lv_obj_set_style_pad_hor(btn, 8, 0);
   lv_obj_set_flex_flow(btn, LV_FLEX_FLOW_ROW);
   lv_obj_set_flex_align(btn, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
@@ -159,7 +203,7 @@ void ensureKeyboard(lv_obj_t *ta) {
     kb = lv_keyboard_create(content);
     lv_obj_set_width(kb, lv_pct(100));
     lv_obj_set_height(kb, 168);
-    lv_obj_set_style_radius(kb, 8, 0);
+    lv_obj_set_style_radius(kb, 0, 0);
   }
   lv_keyboard_set_textarea(kb, ta);
 }
@@ -179,7 +223,7 @@ lv_obj_t *addField(lv_obj_t *parent, const char *caption, const char *value, boo
   lv_obj_set_style_bg_color(ta, lv_color_hex(COL_BG), 0);
   lv_obj_set_style_border_color(ta, lv_color_hex(COL_BORDER), 0);
   lv_obj_set_style_border_width(ta, 1, 0);
-  lv_obj_set_style_radius(ta, 8, 0);
+  lv_obj_set_style_radius(ta, 0, 0);
   lv_obj_set_style_text_color(ta, lv_color_hex(COL_TEXT), 0);
   lv_obj_set_style_pad_ver(ta, 8, 0);
   lv_textarea_set_one_line(ta, true);
@@ -258,6 +302,94 @@ void onTls(lv_event_t *) {
   }
 }
 
+void onTestFilaman(lv_event_t *) {
+  if (WiFi.status() != WL_CONNECTED) {
+    setStatus("WiFi not connected.", COL_DANGER);
+    return;
+  }
+  String url = fieldText(0);
+  url.trim();
+  String key = fieldText(1);
+  key.trim();
+  if (!key.length()) {
+    key = config().filamanApiKey;
+  }
+  if (!url.length() || !key.length()) {
+    setStatus("Enter both Base URL and API key.", COL_WARN);
+    return;
+  }
+  setStatus("Testing FilaMan connection...", COL_MUTED);
+  lv_refr_now(nullptr);
+
+  FilamanClient testClient;
+  testClient.begin(url, key, tlsOn);
+  PrinterOption printers[MAX_PRINTER_OPTIONS];
+  int count = 0;
+  String activeId;
+  const unsigned long t0 = millis();
+  FmResult r = testClient.listBambuddyPrinters(printers, MAX_PRINTER_OPTIONS, count, activeId);
+  const unsigned long dt = millis() - t0;
+  if (r.ok) {
+    String msg = String("Connected (") + dt + " ms)  |  Found " + count +
+                 (count == 1 ? " printer" : " printers");
+    if (count > 0 && printers[0].name.length()) {
+      msg += ": " + printers[0].name;
+    }
+    setStatus(msg, COL_ACCENT);
+  } else {
+    setStatus(String("Connection failed: ") + r.error, COL_DANGER);
+  }
+}
+
+void onTestMqtt(lv_event_t *) {
+  if (WiFi.status() != WL_CONNECTED) {
+    setStatus("WiFi not connected.", COL_DANGER);
+    return;
+  }
+  String host = fieldText(0);
+  host.trim();
+  int port = fieldText(1).toInt();
+  if (port <= 0) {
+    port = 1883;
+  }
+  String user = fieldText(2);
+  user.trim();
+  String pass = fieldText(3);
+  if (!pass.length()) {
+    pass = config().mqttPassword;
+  }
+  if (!host.length()) {
+    setStatus("Enter MQTT broker host.", COL_WARN);
+    return;
+  }
+  setStatus(String("Testing MQTT ") + host + ":" + port + "...", COL_MUTED);
+  lv_refr_now(nullptr);
+
+  WiFiClient tcp;
+  tcp.setTimeout(3);
+  const unsigned long t0 = millis();
+  if (!tcp.connect(host.c_str(), static_cast<uint16_t>(port))) {
+    setStatus(String("TCP connect failed to ") + host + ":" + port, COL_DANGER);
+    return;
+  }
+  PubSubClient mqtt(tcp);
+  mqtt.setServer(host.c_str(), static_cast<uint16_t>(port));
+  String cid = String("crowpanel-test-") + String(static_cast<uint32_t>(ESP.getEfuseMac() & 0xFFFF), HEX);
+  bool ok = false;
+  if (user.length()) {
+    ok = mqtt.connect(cid.c_str(), user.c_str(), pass.c_str());
+  } else {
+    ok = mqtt.connect(cid.c_str());
+  }
+  const unsigned long dt = millis() - t0;
+  if (ok) {
+    mqtt.disconnect();
+    setStatus(String("MQTT broker connected! (") + dt + " ms)", COL_ACCENT);
+  } else {
+    setStatus(String("MQTT auth/handshake failed (rc=") + mqtt.state() + ")", COL_DANGER);
+  }
+}
+
 void onScreen(lv_event_t *event) {
   const int page = static_cast<int>(reinterpret_cast<intptr_t>(lv_event_get_user_data(event)));
   menu_close();
@@ -278,9 +410,17 @@ void onBackHome(lv_event_t *) { showHome(); }
 
 void showHome() {
   pane = Pane::Home;
+  confirmResetArmed = false;
   clearContent();
   lv_label_set_text(titleLabel, "Menu");
-  setStatus("", COL_MUTED);
+  // Compact one-line subtitle (DOT-truncated). Full URL lives in System pane.
+  String sub = String("v") + FIRMWARE_VERSION;
+  if (WiFi.status() == WL_CONNECTED) {
+    sub += "  |  " + WiFi.localIP().toString() + "  |  " + config().otaHostname + ".local";
+  } else {
+    sub += "  |  WiFi offline";
+  }
+  setStatus(sub, COL_MUTED);
 
   lv_obj_t *col = makeScroll();
   addSection(col, "SCREENS");
@@ -312,8 +452,10 @@ void showHome() {
   addNavRow(card, "WiFi", false, onWifi, nullptr);
   addNavRow(card, "FilaMan", false, [](lv_event_t *) { showFilaman(); }, nullptr);
   addNavRow(card, "MQTT", false, [](lv_event_t *) { showMqtt(); }, nullptr);
-  addNavRow(card, "Display", false, [](lv_event_t *) { showDisplay(); }, nullptr);
-  addNavRow(card, "Device", true, [](lv_event_t *) { showDevice(); }, nullptr);
+  addNavRow(card, "Display & Alerts", false, [](lv_event_t *) { showDisplay(); }, nullptr);
+  addNavRow(card, "Device & Timezone", false, [](lv_event_t *) { showDevice(); }, nullptr);
+  addNavRow(card, "Firmware Update", false, [](lv_event_t *) { showUpdate(); }, nullptr);
+  addNavRow(card, "System & Diagnostics", true, [](lv_event_t *) { showSystem(); }, nullptr);
 }
 
 void showFilaman() {
@@ -331,6 +473,7 @@ void showFilaman() {
   tlsLabel = lv_obj_get_child(tlsBtn, 0);
   lv_label_set_text(tlsLabel, tlsOn ? "TLS insecure: on" : "TLS insecure: off");
 
+  makeAction(col, "Test Connection", false, onTestFilaman, nullptr);
   makeAction(col, "Save & reboot", true, onSave, nullptr);
   makeAction(col, "Back", false, onBackHome, nullptr);
 }
@@ -349,6 +492,7 @@ void showMqtt() {
   addField(card, "Username", config().mqttUsername.c_str(), false);
   addField(card, "Password", "", true);
   addField(card, "Topic prefix", config().topicPrefix.c_str(), false);
+  makeAction(col, "Test Connection", false, onTestMqtt, nullptr);
   makeAction(col, "Save & reboot", true, onSave, nullptr);
   makeAction(col, "Back", false, onBackHome, nullptr);
 }
@@ -374,33 +518,153 @@ int shorterTimeout(int minutes) {
   return found;
 }
 
-void onTimeoutPicked(lv_event_t *event) {
-  const intptr_t packed = reinterpret_cast<intptr_t>(lv_event_get_user_data(event));
-  const bool dimRow = packed < 0;
-  const int minutes = static_cast<int>(dimRow ? -packed : packed);
-  int dim = config().displayDimMin;
-  int off = config().displayOffMin;
-  if (dimRow) {
-    const int longer = longerTimeout(minutes);
-    if (longer <= 0) {
-      return;
+enum ChoiceKind : uint8_t {
+  CK_FULL_BRIGHT = 0,
+  CK_DIM_BRIGHT,
+  CK_IDLE,
+  CK_SPOOL_LOW,
+  CK_SPOOL_CRIT,
+  CK_DIM_MIN,
+  CK_OFF_MIN,
+};
+
+struct ChoiceRowCtx {
+  const int *values = nullptr;
+  int count = 0;
+  ChoiceKind kind = CK_FULL_BRIGHT;
+};
+
+// One context per option row in the Display pane. Reset in showDisplay();
+// row objects hold a pointer, so no heap churn on rebuild.
+ChoiceRowCtx choiceCtx[8];
+int choiceCtxUsed = 0;
+
+int currentValForKind(ChoiceKind kind) {
+  switch (kind) {
+    case CK_FULL_BRIGHT:
+      return config().displayFullBrightPct;
+    case CK_DIM_BRIGHT:
+      return config().displayDimBrightPct;
+    case CK_IDLE:
+      return config().idleReturnSec;
+    case CK_SPOOL_LOW:
+      return config().spoolLowPct;
+    case CK_SPOOL_CRIT:
+      return config().spoolCritPct;
+    case CK_DIM_MIN:
+      return config().displayDimMin;
+    case CK_OFF_MIN:
+      return config().displayOffMin;
+  }
+  return 0;
+}
+
+bool choiceAllowed(ChoiceKind kind, int value) {
+  if (kind == CK_DIM_MIN) {
+    return longerTimeout(value) > 0;
+  }
+  if (kind == CK_OFF_MIN) {
+    return shorterTimeout(value) > 0;
+  }
+  return true;
+}
+
+// Re-style one option row in place after a tap. No lv_obj_clean rebuild,
+// no flex re-layout of the whole pane.
+void restyleChoiceRow(lv_obj_t *row) {
+  if (!row) {
+    return;
+  }
+  auto *ctx = static_cast<ChoiceRowCtx *>(lv_obj_get_user_data(row));
+  if (!ctx) {
+    return;
+  }
+  const int current = currentValForKind(ctx->kind);
+  const uint32_t n = lv_obj_get_child_cnt(row);
+  for (uint32_t i = 0; i < n; ++i) {
+    lv_obj_t *btn = lv_obj_get_child(row, i);
+    if (!btn) {
+      continue;
     }
-    dim = minutes;
-    if (off <= dim) {
-      off = longer;
+    const int value = static_cast<int>(reinterpret_cast<intptr_t>(lv_obj_get_user_data(btn)));
+    const bool allowed = choiceAllowed(ctx->kind, value);
+    const bool selected = allowed && (value == current);
+    if (allowed) {
+      lv_obj_clear_state(btn, LV_STATE_DISABLED);
+      lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
+    } else {
+      lv_obj_add_state(btn, LV_STATE_DISABLED);
+      lv_obj_set_style_bg_opa(btn, LV_OPA_40, 0);
     }
-  } else {
-    const int shorter = shorterTimeout(minutes);
-    if (shorter <= 0) {
-      return;
+    styleButton(btn, selected);
+    if (allowed && !selected) {
+      // styleButton resets border for unselected buttons; keep the card border.
+      lv_obj_set_style_border_width(btn, 1, 0);
     }
-    off = minutes;
-    if (dim >= off) {
-      dim = shorter;
+    if (lv_obj_t *lbl = lv_obj_get_child(btn, 0)) {
+      lv_obj_set_style_text_color(
+          lbl, lv_color_hex(selected ? COL_BG : (allowed ? COL_TEXT : COL_MUTED)), 0);
     }
   }
-  config().setDisplayTimeouts(dim, off);
-  showDisplay();
+}
+
+void onChoicePicked(lv_event_t *event) {
+  lv_obj_t *btn = lv_event_get_target(event);
+  lv_obj_t *row = lv_obj_get_parent(btn);
+  auto *ctx = static_cast<ChoiceRowCtx *>(lv_obj_get_user_data(row));
+  if (!ctx) {
+    return;
+  }
+  const int value = static_cast<int>(reinterpret_cast<intptr_t>(lv_event_get_user_data(event)));
+  if (!choiceAllowed(ctx->kind, value) || value == currentValForKind(ctx->kind)) {
+    return;
+  }
+  switch (ctx->kind) {
+    case CK_FULL_BRIGHT:
+      config().setDisplayBrightness(value, config().displayDimBrightPct);
+      backlight_apply();
+      break;
+    case CK_DIM_BRIGHT:
+      config().setDisplayBrightness(config().displayFullBrightPct, value);
+      break;
+    case CK_IDLE:
+      config().setIdleReturnSec(value);
+      break;
+    case CK_SPOOL_LOW:
+      config().setSpoolThresholds(value, config().spoolCritPct);
+      break;
+    case CK_SPOOL_CRIT:
+      config().setSpoolThresholds(config().spoolLowPct, value);
+      break;
+    case CK_DIM_MIN: {
+      int off = config().displayOffMin;
+      if (off <= value) {
+        off = longerTimeout(value);
+      }
+      config().setDisplayTimeouts(value, off);
+      break;
+    }
+    case CK_OFF_MIN: {
+      int dim = config().displayDimMin;
+      if (dim >= value) {
+        dim = shorterTimeout(value);
+      }
+      config().setDisplayTimeouts(dim, value);
+      break;
+    }
+  }
+  restyleChoiceRow(row);
+  // A dim/off change can alter the allowed set of the sibling timeout row.
+  if (ctx->kind == CK_DIM_MIN || ctx->kind == CK_OFF_MIN) {
+    if (lv_obj_t *card = lv_obj_get_parent(row)) {
+      for (uint32_t i = 0; i < lv_obj_get_child_cnt(card); ++i) {
+        lv_obj_t *sib = lv_obj_get_child(card, i);
+        if (sib && sib != row) {
+          restyleChoiceRow(sib);
+        }
+      }
+    }
+  }
 }
 
 void addTimeoutRow(lv_obj_t *parent, const char *caption, bool dimRow) {
@@ -412,60 +676,409 @@ void addTimeoutRow(lv_obj_t *parent, const char *caption, bool dimRow) {
   lv_obj_t *row = lv_obj_create(parent);
   lv_obj_remove_style_all(row);
   lv_obj_set_width(row, lv_pct(100));
-  lv_obj_set_height(row, 48);
+  lv_obj_set_height(row, 44);
   lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
   lv_obj_set_style_pad_column(row, 8, 0);
   lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
 
-  const int current = dimRow ? config().displayDimMin : config().displayOffMin;
+  ChoiceKind kind = dimRow ? CK_DIM_MIN : CK_OFF_MIN;
+  ChoiceRowCtx *ctx = nullptr;
+  if (choiceCtxUsed < static_cast<int>(sizeof(choiceCtx) / sizeof(choiceCtx[0]))) {
+    ctx = &choiceCtx[choiceCtxUsed++];
+    ctx->values = kTimeoutChoices;
+    ctx->count = static_cast<int>(sizeof(kTimeoutChoices) / sizeof(kTimeoutChoices[0]));
+    ctx->kind = kind;
+    lv_obj_set_user_data(row, ctx);
+  }
+
   for (int minutes : kTimeoutChoices) {
-    const bool allowed = dimRow ? longerTimeout(minutes) > 0 : shorterTimeout(minutes) > 0;
-    const bool selected = minutes == current;
     lv_obj_t *btn = lv_btn_create(row);
     lv_obj_set_flex_grow(btn, 1);
-    lv_obj_set_height(btn, 48);
-    styleButton(btn, selected);
-    if (!allowed) {
-      lv_obj_add_state(btn, LV_STATE_DISABLED);
-      lv_obj_set_style_bg_opa(btn, LV_OPA_40, 0);
-    } else if (!selected) {
-      lv_obj_add_event_cb(btn, onTimeoutPicked, LV_EVENT_CLICKED,
-                          reinterpret_cast<void *>(static_cast<intptr_t>(dimRow ? -minutes : minutes)));
-    }
+    lv_obj_set_height(btn, 44);
+    lv_obj_set_user_data(btn, reinterpret_cast<void *>(static_cast<intptr_t>(minutes)));
+    lv_obj_add_event_cb(btn, onChoicePicked, LV_EVENT_CLICKED,
+                        reinterpret_cast<void *>(static_cast<intptr_t>(minutes)));
     lv_obj_t *lbl = lv_label_create(btn);
     lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(lbl, lv_color_hex(selected ? COL_BG : (allowed ? COL_TEXT : COL_MUTED)), 0);
     lv_label_set_text(lbl, (String(minutes) + " min").c_str());
     lv_obj_center(lbl);
   }
+  restyleChoiceRow(row);
+}
+
+void addChoiceRow(lv_obj_t *parent, const char *caption, const int *values, const char *const *labels,
+                  int count, ChoiceKind kind) {
+  lv_obj_t *cap = lv_label_create(parent);
+  lv_obj_set_style_text_font(cap, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_color(cap, lv_color_hex(COL_TEXT), 0);
+  lv_label_set_text(cap, caption);
+
+  lv_obj_t *row = lv_obj_create(parent);
+  lv_obj_remove_style_all(row);
+  lv_obj_set_width(row, lv_pct(100));
+  lv_obj_set_height(row, 44);
+  lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+  lv_obj_set_style_pad_column(row, 8, 0);
+  lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+
+  ChoiceRowCtx *ctx = nullptr;
+  if (choiceCtxUsed < static_cast<int>(sizeof(choiceCtx) / sizeof(choiceCtx[0]))) {
+    ctx = &choiceCtx[choiceCtxUsed++];
+    ctx->values = values;
+    ctx->count = count;
+    ctx->kind = kind;
+    lv_obj_set_user_data(row, ctx);
+  }
+
+  for (int i = 0; i < count; ++i) {
+    lv_obj_t *btn = lv_btn_create(row);
+    lv_obj_set_flex_grow(btn, 1);
+    lv_obj_set_height(btn, 44);
+    lv_obj_set_user_data(btn, reinterpret_cast<void *>(static_cast<intptr_t>(values[i])));
+    lv_obj_add_event_cb(btn, onChoicePicked, LV_EVENT_CLICKED,
+                        reinterpret_cast<void *>(static_cast<intptr_t>(values[i])));
+    lv_obj_t *lbl = lv_label_create(btn);
+    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, 0);
+    lv_label_set_text(lbl, labels[i]);
+    lv_obj_center(lbl);
+  }
+  restyleChoiceRow(row);
 }
 
 void showDisplay() {
   pane = Pane::Display;
   clearContent();
-  lv_label_set_text(titleLabel, "Display");
-  setStatus("Dims first, then turns off. A tap wakes the screen without pressing a control.",
-            COL_MUTED);
+  choiceCtxUsed = 0;
+  lv_label_set_text(titleLabel, "Display & Alerts");
+  setStatus("All settings below take effect immediately and persist across reboots.", COL_MUTED);
 
   lv_obj_t *col = makeScroll();
-  lv_obj_t *card = makeCard(col);
-  addTimeoutRow(card, "Dim after", true);
-  addTimeoutRow(card, "Turn off after", false);
+
+  addSection(col, "BACKLIGHT & SLEEP");
+  lv_obj_t *cardBrt = makeCard(col);
+  static constexpr int kFullVals[] = {50, 75, 100};
+  static constexpr const char *kFullLbls[] = {"50%", "75%", "100%"};
+  addChoiceRow(cardBrt, "Normal brightness", kFullVals, kFullLbls, 3, CK_FULL_BRIGHT);
+
+  static constexpr int kDimVals[] = {10, 20, 35};
+  static constexpr const char *kDimLbls[] = {"10%", "20%", "35%"};
+  addChoiceRow(cardBrt, "Dimmed brightness", kDimVals, kDimLbls, 3, CK_DIM_BRIGHT);
+
+  addTimeoutRow(cardBrt, "Dim after", true);
+  addTimeoutRow(cardBrt, "Turn off after", false);
+
+  addSection(col, "NAVIGATION & SPOOL WARNINGS");
+  lv_obj_t *cardNav = makeCard(col);
+  static constexpr int kIdleVals[] = {0, 60, 180};
+  static constexpr const char *kIdleLbls[] = {"Off", "1 min", "3 min"};
+  addChoiceRow(cardNav, "Auto-return to AMS View", kIdleVals, kIdleLbls, 3, CK_IDLE);
+
+  static constexpr int kLowVals[] = {20, 30, 40};
+  static constexpr const char *kLowLbls[] = {"20%", "30%", "40%"};
+  addChoiceRow(cardNav, "Low spool warning (amber)", kLowVals, kLowLbls, 3, CK_SPOOL_LOW);
+
+  static constexpr int kCritVals[] = {10, 15, 20};
+  static constexpr const char *kCritLbls[] = {"10%", "15%", "20%"};
+  addChoiceRow(cardNav, "Critical spool alert (red)", kCritVals, kCritLbls, 3, CK_SPOOL_CRIT);
+
   makeAction(col, "Back", false, onBackHome, nullptr);
+}
+
+struct TzPreset {
+  const char *label;
+  const char *posix;
+};
+
+constexpr TzPreset kTzPresets[] = {
+    {"US East", "EST5EDT,M3.2.0,M11.1.0"},
+    {"US Central", "CST6CDT,M3.2.0,M11.1.0"},
+    {"US Mtn", "MST7MDT,M3.2.0,M11.1.0"},
+    {"US Pac", "PST8PDT,M3.2.0,M11.1.0"},
+    {"UTC", "UTC0"},
+    {"UK", "GMT0BST,M3.5.0/1,M10.5.0"},
+    {"EU Cent", "CET-1CEST,M3.5.0,M10.5.0/3"},
+};
+
+void onTzPresetPicked(lv_event_t *event) {
+  const int idx = static_cast<int>(reinterpret_cast<intptr_t>(lv_event_get_user_data(event)));
+  if (idx < 0 || idx >= static_cast<int>(sizeof(kTzPresets) / sizeof(kTzPresets[0]))) {
+    return;
+  }
+  if (fieldCount > 1 && fields[1]) {
+    lv_textarea_set_text(fields[1], kTzPresets[idx].posix);
+    setStatus(String("Selected ") + kTzPresets[idx].label + " (" + kTzPresets[idx].posix + ")",
+              COL_ACCENT);
+  }
 }
 
 void showDevice() {
   pane = Pane::Device;
   clearContent();
-  lv_label_set_text(titleLabel, "Device");
-  setStatus("Hostname, timezone, and the OTA / config password.", COL_MUTED);
+  lv_label_set_text(titleLabel, "Device & Timezone");
+  setStatus("Hostname, timezone preset or custom POSIX TZ, and the OTA / config password.",
+            COL_MUTED);
 
   lv_obj_t *col = makeScroll();
   lv_obj_t *card = makeCard(col);
   addField(card, "Hostname", config().otaHostname.c_str(), false);
   addField(card, "Timezone (POSIX TZ)", config().displayTimezone.c_str(), false);
+
+  lv_obj_t *tzCap = lv_label_create(card);
+  lv_obj_set_style_text_font(tzCap, &lv_font_montserrat_12, 0);
+  lv_obj_set_style_text_color(tzCap, lv_color_hex(COL_MUTED), 0);
+  lv_label_set_text(tzCap, "Quick timezone presets");
+
+  lv_obj_t *tzRow = lv_obj_create(card);
+  lv_obj_remove_style_all(tzRow);
+  lv_obj_set_width(tzRow, lv_pct(100));
+  lv_obj_set_height(tzRow, LV_SIZE_CONTENT);
+  lv_obj_set_flex_flow(tzRow, LV_FLEX_FLOW_ROW_WRAP);
+  lv_obj_set_style_pad_column(tzRow, 6, 0);
+  lv_obj_set_style_pad_row(tzRow, 6, 0);
+  lv_obj_clear_flag(tzRow, LV_OBJ_FLAG_SCROLLABLE);
+
+  constexpr int kTzCount = static_cast<int>(sizeof(kTzPresets) / sizeof(kTzPresets[0]));
+  for (int i = 0; i < kTzCount; ++i) {
+    const bool active = (config().displayTimezone == kTzPresets[i].posix);
+    lv_obj_t *btn = lv_btn_create(tzRow);
+    lv_obj_set_height(btn, 38);
+    lv_obj_set_style_pad_hor(btn, 12, 0);
+    styleButton(btn, active);
+    lv_obj_set_style_min_height(btn, 38, 0);
+    lv_obj_add_event_cb(btn, onTzPresetPicked, LV_EVENT_CLICKED,
+                        reinterpret_cast<void *>(static_cast<intptr_t>(i)));
+    lv_obj_t *lbl = lv_label_create(btn);
+    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(lbl, lv_color_hex(active ? COL_BG : COL_TEXT), 0);
+    lv_label_set_text(lbl, kTzPresets[i].label);
+    lv_obj_center(lbl);
+  }
+
   addField(card, "OTA / config password", "", true);
   makeAction(col, "Save & reboot", true, onSave, nullptr);
+  makeAction(col, "Back", false, onBackHome, nullptr);
+}
+
+void runGithubCheck() {
+  setStatus("Checking GitHub for updates...", COL_MUTED);
+  lv_refr_now(nullptr);
+  String ver, url, err;
+  if (ota_check_github_update(ver, url, err)) {
+    latestGithubVer = ver;
+    latestGithubUrl = url;
+    showUpdate();
+    const int cmp = ota_compare_versions(latestGithubVer, FIRMWARE_VERSION);
+    if (cmp > 0) {
+      setStatus(String("Update available: v") + latestGithubVer, COL_ACCENT);
+    } else {
+      setStatus(String("Up to date (v") + latestGithubVer + ")", COL_MUTED);
+    }
+  } else {
+    setStatus(String("Update check failed: ") + err, COL_DANGER);
+  }
+}
+
+void onCheckUpdates(lv_event_t *) {
+  runGithubCheck();
+}
+
+void onInstallGithubUpdate(lv_event_t *) {
+  touch_input_cooldown(500);
+  if (updateProgressBar) {
+    lv_obj_clear_flag(updateProgressBar, LV_OBJ_FLAG_HIDDEN);
+    lv_bar_set_value(updateProgressBar, 0, LV_ANIM_OFF);
+  }
+  setStatus("Connecting to GitHub...", COL_ACCENT);
+  lv_refr_now(nullptr);
+
+  String err;
+  const bool ok = ota_install_github_update(
+      latestGithubUrl,
+      [](int pct) {
+        if (updateProgressBar) {
+          lv_bar_set_value(updateProgressBar, pct, LV_ANIM_OFF);
+        }
+        setStatus(String("Downloading & flashing... ") + pct + "%", COL_ACCENT);
+        lv_refr_now(nullptr);
+      },
+      err);
+
+  if (ok) {
+    setStatus("Update complete! Rebooting...", COL_ACCENT);
+    lv_refr_now(nullptr);
+    delay(800);
+    ESP.restart();
+  } else {
+    setStatus(String("Update failed: ") + err, COL_DANGER);
+    lv_refr_now(nullptr);
+  }
+}
+
+void showUpdate() {
+  pane = Pane::Update;
+  clearContent();
+  lv_label_set_text(titleLabel, "Firmware Update");
+
+  const bool hasLatest = latestGithubVer.length() > 0;
+  const bool newerAvailable =
+      hasLatest && ota_compare_versions(latestGithubVer, FIRMWARE_VERSION) > 0;
+
+  if (!hasLatest) {
+    setStatus("Check GitHub for the latest firmware release (keeps all saved settings).",
+              COL_MUTED);
+  } else if (newerAvailable) {
+    setStatus(String("Update available: v") + latestGithubVer, COL_ACCENT);
+  } else {
+    setStatus(String("Up to date (v") + latestGithubVer + ")", COL_MUTED);
+  }
+
+  lv_obj_t *col = makeScroll();
+  lv_obj_t *card = makeCard(col);
+
+  lv_obj_t *curLbl = lv_label_create(card);
+  lv_obj_set_style_text_font(curLbl, &lv_font_montserrat_16, 0);
+  lv_obj_set_style_text_color(curLbl, lv_color_hex(COL_TEXT), 0);
+  lv_label_set_text(curLbl, (String("Installed version:  v") + FIRMWARE_VERSION).c_str());
+
+  lv_obj_t *latLbl = lv_label_create(card);
+  lv_obj_set_style_text_font(latLbl, &lv_font_montserrat_16, 0);
+  lv_obj_set_style_text_color(
+      latLbl, lv_color_hex(newerAvailable ? COL_ACCENT : (hasLatest ? COL_TEXT : COL_MUTED)), 0);
+  if (hasLatest) {
+    String t = String("Latest on GitHub:   v") + latestGithubVer;
+    if (newerAvailable) {
+      t += "  (NEW)";
+    }
+    lv_label_set_text(latLbl, t.c_str());
+  } else {
+    lv_label_set_text(latLbl, "Latest on GitHub:   (tap Check for updates)");
+  }
+
+  updateProgressBar = lv_bar_create(card);
+  lv_obj_set_width(updateProgressBar, lv_pct(100));
+  lv_obj_set_height(updateProgressBar, 10);
+  lv_bar_set_range(updateProgressBar, 0, 100);
+  lv_bar_set_value(updateProgressBar, 0, LV_ANIM_OFF);
+  lv_obj_set_style_bg_color(updateProgressBar, lv_color_hex(COL_BG), LV_PART_MAIN);
+  lv_obj_set_style_bg_color(updateProgressBar, lv_color_hex(COL_ACCENT), LV_PART_INDICATOR);
+  lv_obj_set_style_radius(updateProgressBar, 5, LV_PART_MAIN);
+  lv_obj_set_style_radius(updateProgressBar, 5, LV_PART_INDICATOR);
+  lv_obj_add_flag(updateProgressBar, LV_OBJ_FLAG_HIDDEN);
+
+  makeAction(col, (String(LV_SYMBOL_REFRESH) + "  Check for updates").c_str(), !hasLatest,
+             onCheckUpdates, nullptr);
+
+  String installText;
+  if (newerAvailable) {
+    installText = String(LV_SYMBOL_DOWNLOAD) + "  Install v" + latestGithubVer + " from GitHub";
+  } else if (hasLatest) {
+    installText = String(LV_SYMBOL_DOWNLOAD) + "  Reinstall v" + latestGithubVer + " from GitHub";
+  } else {
+    installText = String(LV_SYMBOL_DOWNLOAD) + "  Install latest from GitHub";
+  }
+  makeAction(col, installText.c_str(), newerAvailable, onInstallGithubUpdate, nullptr);
+
+  makeAction(col, "Back", false, onBackHome, nullptr);
+}
+
+void addStatLine(lv_obj_t *parent, const char *label, const String &val) {
+  lv_obj_t *row = lv_obj_create(parent);
+  lv_obj_remove_style_all(row);
+  lv_obj_set_width(row, lv_pct(100));
+  lv_obj_set_height(row, LV_SIZE_CONTENT);
+  lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+  lv_obj_set_flex_align(row, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+  lv_obj_t *k = lv_label_create(row);
+  lv_obj_set_style_text_font(k, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_color(k, lv_color_hex(COL_MUTED), 0);
+  lv_label_set_text(k, label);
+
+  lv_obj_t *v = lv_label_create(row);
+  lv_obj_set_style_text_font(v, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_color(v, lv_color_hex(COL_TEXT), 0);
+  lv_label_set_text(v, val.c_str());
+}
+
+String formatUptime() {
+  const unsigned long totalSec = millis() / 1000UL;
+  const unsigned long d = totalSec / 86400UL;
+  const unsigned long h = (totalSec % 86400UL) / 3600UL;
+  const unsigned long m = (totalSec % 3600UL) / 60UL;
+  const unsigned long s = totalSec % 60UL;
+  if (d > 0) {
+    return String(d) + "d " + h + "h " + m + "m";
+  }
+  if (h > 0) {
+    return String(h) + "h " + m + "m " + s + "s";
+  }
+  return String(m) + "m " + s + "s";
+}
+
+void onRebootNow(lv_event_t *) {
+  setStatus("Rebooting display...", COL_ACCENT);
+  lv_refr_now(nullptr);
+  delay(500);
+  ESP.restart();
+}
+
+void onFactoryReset(lv_event_t *) {
+  if (!confirmResetArmed) {
+    confirmResetArmed = true;
+    showSystem();
+    setStatus("Tap 'Confirm Factory Reset' again to erase saved NVS settings and reboot.", COL_WARN);
+    return;
+  }
+  config().factoryReset();
+  setStatus("Factory settings restored. Rebooting...", COL_ACCENT);
+  lv_refr_now(nullptr);
+  delay(700);
+  ESP.restart();
+}
+
+void showSystem() {
+  pane = Pane::System;
+  clearContent();
+  lv_label_set_text(titleLabel, "System & Diagnostics");
+  setStatus("Live hardware, network, and FilaMan telemetry.", COL_MUTED);
+
+  lv_obj_t *col = makeScroll();
+  lv_obj_t *card = makeCard(col);
+
+  addStatLine(card, "Firmware", String("v") + FIRMWARE_VERSION);
+  addStatLine(card, "Uptime", formatUptime());
+
+  if (WiFi.status() == WL_CONNECTED) {
+    addStatLine(card, "WiFi SSID / RSSI",
+                WiFi.SSID() + "  (" + String(WiFi.RSSI()) + " dBm)");
+    addStatLine(card, "IP / Hostname",
+                WiFi.localIP().toString() + "  (" + config().otaHostname + ".local)");
+  } else {
+    addStatLine(card, "WiFi", "Disconnected");
+  }
+
+  String pollInfo = display_poll_active() ? String(display_poll_status()) : String("MQTT mode");
+  if (display_poll_active() && display_poll_last_latency_ms() > 0) {
+    pollInfo += "  (" + String(display_poll_last_latency_ms()) + " ms)";
+  }
+  addStatLine(card, "Data source", pollInfo);
+
+  const uint32_t freeInt = ESP.getFreeHeap() / 1024U;
+  const uint32_t freePsram = heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024U;
+  addStatLine(card, "Free RAM / PSRAM",
+              String(freeInt) + " KB internal  |  " + String(freePsram) + " KB PSRAM");
+
+  makeAction(col, "Refresh Diagnostics", false, [](lv_event_t *) { showSystem(); }, nullptr);
+  makeAction(col, "Reboot Display", false, onRebootNow, nullptr);
+
+  lv_obj_t *rstBtn = makeAction(
+      col, confirmResetArmed ? "Confirm Factory Reset (Erases NVS)" : "Factory Reset Settings",
+      false, onFactoryReset, nullptr);
+  lv_obj_set_style_border_color(rstBtn, lv_color_hex(COL_DANGER), 0);
+  if (lv_obj_t *lbl = lv_obj_get_child(rstBtn, 0)) {
+    lv_obj_set_style_text_color(lbl, lv_color_hex(COL_DANGER), 0);
+  }
+
   makeAction(col, "Back", false, onBackHome, nullptr);
 }
 
@@ -485,37 +1098,51 @@ void menu_begin() {
   lv_obj_clear_flag(overlay, LV_OBJ_FLAG_SCROLLABLE);
   lv_obj_add_flag(overlay, LV_OBJ_FLAG_HIDDEN);
 
+  // Title row + fixed single-line status bar. The status used to wrap under
+  // the title (LONG_WRAP on a long v/IP/host string) and looked like a broken
+  // header; keep it one truncated line below the title.
   lv_obj_t *header = lv_obj_create(overlay);
   lv_obj_remove_style_all(header);
   lv_obj_set_width(header, lv_pct(100));
-  lv_obj_set_height(header, 40);
-  lv_obj_set_flex_flow(header, LV_FLEX_FLOW_ROW);
-  lv_obj_set_flex_align(header, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-  lv_obj_set_style_pad_column(header, 10, 0);
+  lv_obj_set_height(header, LV_SIZE_CONTENT);
+  lv_obj_set_flex_flow(header, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_style_pad_row(header, 4, 0);
+  lv_obj_clear_flag(header, LV_OBJ_FLAG_SCROLLABLE);
 
-  titleLabel = lv_label_create(header);
+  lv_obj_t *titleRow = lv_obj_create(header);
+  lv_obj_remove_style_all(titleRow);
+  lv_obj_set_width(titleRow, lv_pct(100));
+  lv_obj_set_height(titleRow, 40);
+  lv_obj_set_flex_flow(titleRow, LV_FLEX_FLOW_ROW);
+  lv_obj_set_flex_align(titleRow, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_style_pad_column(titleRow, 10, 0);
+  lv_obj_clear_flag(titleRow, LV_OBJ_FLAG_SCROLLABLE);
+
+  titleLabel = lv_label_create(titleRow);
   lv_obj_set_style_text_font(titleLabel, &lv_font_montserrat_22, 0);
   lv_obj_set_style_text_color(titleLabel, lv_color_hex(COL_TEXT), 0);
   lv_obj_set_flex_grow(titleLabel, 1);
+  lv_label_set_long_mode(titleLabel, LV_LABEL_LONG_DOT);
   lv_label_set_text(titleLabel, "Menu");
 
-  lv_obj_t *closeBtn = lv_btn_create(header);
+  lv_obj_t *closeBtn = lv_btn_create(titleRow);
   lv_obj_set_size(closeBtn, 60, 40);
   lv_obj_set_style_bg_color(closeBtn, lv_color_hex(COL_SURFACE_2), 0);
   lv_obj_set_style_border_width(closeBtn, 1, 0);
   lv_obj_set_style_border_color(closeBtn, lv_color_hex(COL_BORDER), 0);
-  lv_obj_set_style_radius(closeBtn, 8, 0);
+  lv_obj_set_style_radius(closeBtn, 0, 0);
   lv_obj_add_event_cb(closeBtn, onCloseClicked, LV_EVENT_CLICKED, nullptr);
   lv_obj_t *xl = lv_label_create(closeBtn);
   lv_obj_set_style_text_color(xl, lv_color_hex(COL_TEXT), 0);
   lv_label_set_text(xl, LV_SYMBOL_CLOSE);
   lv_obj_center(xl);
 
-  statusLabel = lv_label_create(overlay);
+  statusLabel = lv_label_create(header);
   lv_obj_set_style_text_font(statusLabel, &lv_font_montserrat_14, 0);
   lv_obj_set_style_text_color(statusLabel, lv_color_hex(COL_MUTED), 0);
   lv_obj_set_width(statusLabel, lv_pct(100));
-  lv_label_set_long_mode(statusLabel, LV_LABEL_LONG_WRAP);
+  lv_obj_set_height(statusLabel, 20);
+  lv_label_set_long_mode(statusLabel, LV_LABEL_LONG_DOT);
   lv_label_set_text(statusLabel, "");
 
   content = lv_obj_create(overlay);
@@ -537,6 +1164,17 @@ void menu_open() {
   lv_obj_clear_flag(overlay, LV_OBJ_FLAG_HIDDEN);
   lv_obj_move_foreground(overlay);
   showHome();
+}
+
+void menu_open_update() {
+  if (!overlay) {
+    return;
+  }
+  wifi_setup_close();
+  printer_select_close();
+  lv_obj_clear_flag(overlay, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_move_foreground(overlay);
+  showUpdate();
 }
 
 void menu_close() {

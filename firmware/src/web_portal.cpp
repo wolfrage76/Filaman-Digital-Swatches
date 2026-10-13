@@ -8,6 +8,7 @@
 
 #include "app_config.h"
 #include "display_poll.h"
+#include "ota_update.h"
 #include "printer_list.h"
 
 namespace {
@@ -104,9 +105,14 @@ void handleRoot() {
   h += "<input type=checkbox name=fmTls ";
   h += (c.filamanTlsInsecure ? "checked" : "");
   h += " style='width:auto'>TLS insecure (LAN https)</label>";
-  h += "</fieldset><fieldset><legend>Device</legend>";
+  h += "</fieldset><fieldset><legend>Device &amp; Display</legend>";
   h += field("Hostname", "otaHost", c.otaHostname, "text");
   h += field("Timezone (POSIX TZ, e.g. EST5EDT,M3.2.0,M11.1.0)", "tz", c.displayTimezone, "text");
+  h += field("Normal brightness % (50 / 75 / 100)", "brtFull", String(c.displayFullBrightPct), "number");
+  h += field("Dimmed brightness % (10 / 20 / 35)", "brtDim", String(c.displayDimBrightPct), "number");
+  h += field("Auto-return to AMS View sec (0 / 60 / 180)", "idleSec", String(c.idleReturnSec), "number");
+  h += field("Low spool warning % (20 / 30 / 40)", "spLow", String(c.spoolLowPct), "number");
+  h += field("Critical spool alert % (10 / 15 / 20)", "spCrit", String(c.spoolCritPct), "number");
   h += pwField("OTA / config password", "otaPass");
   h += "</fieldset>";
   h += "<button type=submit>Save &amp; Reboot</button></form>";
@@ -146,7 +152,11 @@ void handleRoot() {
   h += " · ";
   h += display_poll_active() ? display_poll_status() : "mqtt mode";
   h += "</p>";
-  h += "<p><a href='/update' style='color:#5aa7ff'>Firmware update (upload .bin over WiFi)</a></p>";
+  h += "<form method=post action=/github-update style='margin-top:12px'><fieldset><legend>Firmware Update</legend>";
+  h += "<p style='color:#8b98a8;margin:4px 0 8px'>Installed: v" + String(FIRMWARE_VERSION) + "</p>";
+  h += "<button type=submit>Check &amp; Install Latest Release from GitHub</button>";
+  h += "<p style='margin:10px 0 0'><a href='/update' style='color:#5aa7ff'>Or upload a local .bin file over WiFi</a></p>";
+  h += "</fieldset></form>";
   server.send(200, "text/html", h);
 }
 
@@ -178,6 +188,16 @@ void handleSave() {
   c.filamanTlsInsecure = server.hasArg("fmTls");  // unchecked box sends nothing
   if (server.hasArg("otaHost")) c.otaHostname = server.arg("otaHost");
   if (server.hasArg("tz") && server.arg("tz").length()) c.displayTimezone = server.arg("tz");
+  if (server.hasArg("brtFull") && server.arg("brtFull").length())
+    c.displayFullBrightPct = server.arg("brtFull").toInt();
+  if (server.hasArg("brtDim") && server.arg("brtDim").length())
+    c.displayDimBrightPct = server.arg("brtDim").toInt();
+  if (server.hasArg("idleSec") && server.arg("idleSec").length())
+    c.idleReturnSec = server.arg("idleSec").toInt();
+  if (server.hasArg("spLow") && server.arg("spLow").length())
+    c.spoolLowPct = server.arg("spLow").toInt();
+  if (server.hasArg("spCrit") && server.arg("spCrit").length())
+    c.spoolCritPct = server.arg("spCrit").toInt();
   c.otaPassword = keepIfBlank("otaPass", c.otaPassword);
   c.save();
 
@@ -205,6 +225,36 @@ void handlePrinter() {
   }
 }
 
+void handleGithubUpdate() {
+  if (!authOK()) {
+    return;
+  }
+  String ver, url, err;
+  if (!ota_check_github_update(ver, url, err)) {
+    server.send(500, "text/html",
+                "<meta http-equiv=refresh content='6;url=/'>"
+                "<body style='font-family:sans-serif;background:#0a0e14;color:#ff5c6a'>"
+                "GitHub update check failed: " +
+                    esc(err));
+    return;
+  }
+  if (!ota_install_github_update(url, nullptr, err)) {
+    server.send(500, "text/html",
+                "<meta http-equiv=refresh content='6;url=/'>"
+                "<body style='font-family:sans-serif;background:#0a0e14;color:#ff5c6a'>"
+                "GitHub OTA failed: " +
+                    esc(err));
+    return;
+  }
+  server.send(200, "text/html",
+              "<meta http-equiv=refresh content='8;url=/'>"
+              "<body style='font-family:sans-serif;background:#0a0e14;color:#3ddc97'>"
+              "Installed v" +
+                  esc(ver) + " from GitHub. Rebooting...");
+  delay(700);
+  ESP.restart();
+}
+
 }  // namespace
 
 void web_portal_begin() {
@@ -214,6 +264,7 @@ void web_portal_begin() {
   server.on("/", handleRoot);
   server.on("/save", HTTP_POST, handleSave);
   server.on("/printer", HTTP_POST, handlePrinter);
+  server.on("/github-update", HTTP_POST, handleGithubUpdate);
   // Browser firmware upload over WiFi at /update (writes the inactive OTA slot).
   if (config().otaPassword.length()) {
     httpUpdater.setup(&server, "/update", "admin", config().otaPassword.c_str());

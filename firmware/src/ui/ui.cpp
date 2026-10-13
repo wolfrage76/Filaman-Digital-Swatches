@@ -2,11 +2,13 @@
 
 #include <lvgl.h>
 
+#include "app_config.h"
 #include "config.h"
 #include "display_poll.h"
 #include "menu_ui.h"
 #include "models.h"
 #include "printer_select.h"
+#include "touch_input.h"
 #include "wifi_setup.h"
 
 namespace {
@@ -367,6 +369,18 @@ void clearSwatchFillChildren(lv_obj_t *fill) {
   }
 }
 
+// True while the object (or any ancestor container) is mid-scroll. Gradient
+// fills drop to half resolution and fiber/sparkle overlays are skipped
+// entirely during scroll; the scroll-end invalidate repaints full detail.
+bool objOrAncestorScrolling(lv_obj_t *obj) {
+  for (lv_obj_t *o = obj; o != nullptr; o = lv_obj_get_parent(o)) {
+    if (lv_obj_is_scrolling(o)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 void swatchFillDrawCb(lv_event_t *e) {
   if (lv_event_get_code(e) != LV_EVENT_DRAW_MAIN) {
     return;
@@ -393,14 +407,16 @@ void swatchFillDrawCb(lv_event_t *e) {
 
   // ~105° diagonal blend (FilaMan AMS View silk gradient). Only the clipped
   // span is painted; walking a broken full-screen width stalled the panel.
+  // Half horizontal resolution while scrolling: ~45 rects instead of ~90 per
+  // swatch per scroll frame.
   const int denom = w * 4 + h;
   lv_draw_rect_dsc_t dsc;
   lv_draw_rect_dsc_init(&dsc);
   dsc.bg_opa = LV_OPA_COVER;
-  constexpr int STEP = 2;
+  const int step = objOrAncestorScrolling(obj) ? 4 : 2;
   const int xStart = visible.x1 - coords.x1;
   const int xEnd = visible.x2 - coords.x1;
-  for (int x = xStart - (xStart % STEP); x <= xEnd; x += STEP) {
+  for (int x = xStart - (xStart % step); x <= xEnd; x += step) {
     int t = ((x * 4 + h / 2) * 256) / (denom > 0 ? denom : 1);
     if (t < 0) {
       t = 0;
@@ -410,7 +426,7 @@ void swatchFillDrawCb(lv_event_t *e) {
     }
     dsc.bg_color = lv_color_hex(sampleSwatchGradient(paint->colors, paint->count, t));
     lv_area_t strip = {static_cast<lv_coord_t>(coords.x1 + x), visible.y1,
-                       static_cast<lv_coord_t>(coords.x1 + x + STEP - 1), visible.y2};
+                       static_cast<lv_coord_t>(coords.x1 + x + step - 1), visible.y2};
     if (strip.x2 > coords.x2) {
       strip.x2 = coords.x2;
     }
@@ -443,6 +459,12 @@ void swatchOverlayDrawCb(lv_event_t *e) {
   lv_draw_ctx_t *draw_ctx = lv_event_get_draw_ctx(e);
   auto *paint = static_cast<SwatchPaint *>(lv_obj_get_user_data(obj));
   if (!paint || !draw_ctx || (paint->sparkle == 0 && paint->fiber == 0)) {
+    return;
+  }
+  // Speckle/fiber lines are the costliest overlay pass (~36 line draws +
+  // up to 16 masked circle rects per swatch). Skip while scrolling; the
+  // scroll-end invalidate repaints them once the list settles.
+  if (objOrAncestorScrolling(obj)) {
     return;
   }
 
@@ -671,13 +693,12 @@ void applyColorSwatch(lv_obj_t *swatch, lv_obj_t **fillOut, lv_obj_t **frostOut,
   }
 
   if (useFinish == SwatchFinish::Glow) {
+    // Square 1 px border instead of the 4 px glow outline: the outline is an
+    // extra masked draw pass on every scrolling bay, the border is not.
     lv_obj_set_style_border_width(swatch, 1, 0);
     lv_obj_set_style_border_color(swatch, lv_color_hex(0x000000), 0);
     lv_obj_set_style_border_opa(swatch, LV_OPA_70, 0);
-    lv_obj_set_style_outline_width(swatch, 4, 0);
-    lv_obj_set_style_outline_color(swatch, lv_color_hex(COL_GLOW_FRAME), 0);
-    lv_obj_set_style_outline_opa(swatch, LV_OPA_COVER, 0);
-    lv_obj_set_style_outline_pad(swatch, 0, 0);
+    lv_obj_set_style_outline_width(swatch, 0, 0);
   } else {
     lv_obj_set_style_outline_width(swatch, 0, 0);
     lv_obj_set_style_border_width(swatch, 0, 0);
@@ -923,10 +944,10 @@ uint32_t spoolBorderColor(const OverviewSlot &slot) {
   if (slot.active) {
     return COL_ACCENT;
   }
-  if (slot.remainingPercent >= 0 && slot.remainingPercent < SPOOL_CRITICAL_PERCENT) {
+  if (slot.remainingPercent >= 0 && slot.remainingPercent < config().spoolCritPct) {
     return COL_DANGER;
   }
-  if (slot.remainingPercent >= 0 && slot.remainingPercent < SPOOL_LOW_PERCENT) {
+  if (slot.remainingPercent >= 0 && slot.remainingPercent < config().spoolLowPct) {
     return COL_WARN;
   }
   return COL_BORDER;
@@ -981,10 +1002,10 @@ String remainingBothText(int percent, const String &grams) {
 }
 
 uint32_t remainingBarColor(int percent) {
-  if (percent >= 0 && percent < SPOOL_CRITICAL_PERCENT) {
+  if (percent >= 0 && percent < config().spoolCritPct) {
     return COL_DANGER;
   }
-  if (percent >= 0 && percent < SPOOL_LOW_PERCENT) {
+  if (percent >= 0 && percent < config().spoolLowPct) {
     return COL_WARN;
   }
   return COL_ACCENT;
@@ -1615,7 +1636,7 @@ bool cardUnitFor(int card, OverviewUnit &out) {
     }
   }
   if (firstLabel.length() && lastLabel.length() && firstLabel != lastLabel) {
-    out.label = firstLabel + "–" + lastLabel;
+    out.label = firstLabel + "-" + lastLabel;
   } else {
     out.label = firstLabel.length() ? firstLabel : String("AMS-HT");
   }
@@ -2133,6 +2154,10 @@ void gotoPage(int page) {
     return;
   }
   ui_note_activity();
+  touch_input_cooldown(260);
+  if (lv_indev_t *indev = lv_indev_get_act()) {
+    lv_indev_wait_release(indev);
+  }
   if (page == currentPage) {
     refreshNav();
     return;
@@ -2207,8 +2232,8 @@ void buildColumn(lv_obj_t *parent, int index) {
   lv_bar_set_range(widgets.remainingBar, 0, 100);
   lv_obj_set_style_bg_color(widgets.remainingBar, lv_color_hex(COL_BORDER_SOFT), LV_PART_MAIN);
   lv_obj_set_style_bg_color(widgets.remainingBar, lv_color_hex(COL_ACCENT), LV_PART_INDICATOR);
-  lv_obj_set_style_radius(widgets.remainingBar, 4, LV_PART_MAIN);
-  lv_obj_set_style_radius(widgets.remainingBar, 4, LV_PART_INDICATOR);
+  lv_obj_set_style_radius(widgets.remainingBar, 0, LV_PART_MAIN);
+  lv_obj_set_style_radius(widgets.remainingBar, 0, LV_PART_INDICATOR);
 
   widgets.remaining = makeLabel(body, &lv_font_montserrat_14, lv_color_hex(COL_TEXT));
   lv_obj_set_width(widgets.remaining, lv_pct(100));
@@ -2296,8 +2321,8 @@ void buildStatusPage(lv_obj_t *parent) {
   lv_bar_set_range(statusUi.progressBar, 0, 100);
   lv_obj_set_style_bg_color(statusUi.progressBar, lv_color_hex(COL_BORDER_SOFT), LV_PART_MAIN);
   lv_obj_set_style_bg_color(statusUi.progressBar, lv_color_hex(COL_ACCENT), LV_PART_INDICATOR);
-  lv_obj_set_style_radius(statusUi.progressBar, 6, LV_PART_MAIN);
-  lv_obj_set_style_radius(statusUi.progressBar, 6, LV_PART_INDICATOR);
+  lv_obj_set_style_radius(statusUi.progressBar, 0, LV_PART_MAIN);
+  lv_obj_set_style_radius(statusUi.progressBar, 0, LV_PART_INDICATOR);
 
   statusUi.etaClockLabel = lv_label_create(progressRow);
   lv_obj_set_style_text_font(statusUi.etaClockLabel, &lv_font_montserrat_12, 0);
@@ -2384,7 +2409,7 @@ void buildOverviewBay(OverviewBay &bay, lv_obj_t *parent, bool withClimate) {
   lv_obj_set_style_bg_color(bay.root, lv_color_hex(COL_AMS_SOFT), 0);
   lv_obj_set_style_border_width(bay.root, 1, 0);
   lv_obj_set_style_border_color(bay.root, lv_color_hex(COL_BORDER), 0);
-  lv_obj_set_style_radius(bay.root, 10, 0);
+  lv_obj_set_style_radius(bay.root, 0, 0);
   lv_obj_set_style_min_width(bay.root, 0, 0);
   lv_obj_set_flex_flow(bay.root, LV_FLEX_FLOW_COLUMN);
   lv_obj_set_flex_grow(bay.root, 1);
@@ -2451,8 +2476,6 @@ void buildOverviewBay(OverviewBay &bay, lv_obj_t *parent, bool withClimate) {
   lv_bar_set_range(bay.remainingBar, 0, 100);
   lv_obj_set_style_bg_color(bay.remainingBar, lv_color_hex(0x0B1410), LV_PART_MAIN);
   lv_obj_set_style_bg_color(bay.remainingBar, lv_color_hex(COL_ACCENT), LV_PART_INDICATOR);
-  lv_obj_set_style_radius(bay.remainingBar, 4, LV_PART_MAIN);
-  lv_obj_set_style_radius(bay.remainingBar, 4, LV_PART_INDICATOR);
 
   bay.pct = lv_label_create(bay.remainingRow);
   lv_obj_set_style_text_font(bay.pct, &lv_font_montserrat_12, 0);
@@ -2511,7 +2534,7 @@ void buildOverviewPage(lv_obj_t *parent) {
     lv_obj_set_style_bg_color(card.root, lv_color_hex(COL_AMS_CARD), 0);
     lv_obj_set_style_border_width(card.root, 1, 0);
     lv_obj_set_style_border_color(card.root, lv_color_hex(0x1F3A2C), 0);
-    lv_obj_set_style_radius(card.root, 12, 0);
+    lv_obj_set_style_radius(card.root, 0, 0);
     lv_obj_set_style_pad_all(card.root, 6, 0);
     lv_obj_set_style_pad_row(card.root, 4, 0);
     lv_obj_set_style_min_width(card.root, 0, 0);
@@ -2677,8 +2700,8 @@ void initStyles() {
   lv_style_set_bg_opa(&columnStyle, LV_OPA_COVER);
   lv_style_set_border_width(&columnStyle, 1);
   lv_style_set_border_color(&columnStyle, lv_color_hex(COL_BORDER));
-  lv_style_set_radius(&columnStyle, 14);
-  lv_style_set_clip_corner(&columnStyle, true);
+  lv_style_set_radius(&columnStyle, 0);
+  lv_style_set_clip_corner(&columnStyle, false);
 
   lv_style_init(&activeColumnStyle);
   lv_style_set_border_width(&activeColumnStyle, 2);
@@ -2693,7 +2716,7 @@ void initStyles() {
   lv_style_set_bg_opa(&cardStyle, LV_OPA_COVER);
   lv_style_set_border_width(&cardStyle, 1);
   lv_style_set_border_color(&cardStyle, lv_color_hex(COL_BORDER));
-  lv_style_set_radius(&cardStyle, 12);
+  lv_style_set_radius(&cardStyle, 0);
 
   lv_style_init(&heroStyle);
   lv_style_set_bg_color(&heroStyle, lv_color_hex(COL_SURFACE_2));
@@ -2769,6 +2792,14 @@ void menuEvent(lv_event_t *event) {
   }
   ui_note_activity();
   menu_open();
+}
+
+void versionEvent(lv_event_t *event) {
+  if (lv_event_get_code(event) != LV_EVENT_CLICKED) {
+    return;
+  }
+  ui_note_activity();
+  menu_open_update();
 }
 
 void backEvent(lv_event_t *event) {
@@ -2889,35 +2920,48 @@ void ui_begin() {
   lv_obj_t *header = lv_obj_create(root);
   lv_obj_remove_style_all(header);
   lv_obj_set_width(header, lv_pct(100));
-  lv_obj_set_height(header, 36);
+  lv_obj_set_height(header, 42);
   lv_obj_set_flex_flow(header, LV_FLEX_FLOW_ROW);
-  lv_obj_set_flex_align(header, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-  lv_obj_set_style_pad_column(header, 10, 0);
+  lv_obj_set_flex_align(header, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_style_pad_column(header, 8, 0);
+  lv_obj_clear_flag(header, LV_OBJ_FLAG_SCROLLABLE);
 
-  lv_obj_t *menuBtn = lv_label_create(header);
-  lv_obj_set_style_text_font(menuBtn, &lv_font_montserrat_18, 0);
-  lv_obj_set_style_text_color(menuBtn, lv_color_hex(COL_ACCENT), 0);
-  lv_label_set_text(menuBtn, LV_SYMBOL_LIST);
-  lv_obj_add_flag(menuBtn, LV_OBJ_FLAG_CLICKABLE);
-  lv_obj_set_ext_click_area(menuBtn, 12);
-  lv_obj_add_event_cb(menuBtn, menuEvent, LV_EVENT_CLICKED, nullptr);
+  lv_obj_t *headerLeft = lv_obj_create(header);
+  lv_obj_remove_style_all(headerLeft);
+  lv_obj_set_width(headerLeft, 0);
+  lv_obj_set_flex_grow(headerLeft, 1);
+  lv_obj_set_height(headerLeft, LV_SIZE_CONTENT);
+  lv_obj_set_flex_flow(headerLeft, LV_FLEX_FLOW_ROW);
+  lv_obj_set_flex_align(headerLeft, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_style_pad_column(headerLeft, 10, 0);
+  lv_obj_set_style_pad_left(headerLeft, 4, 0);
+  lv_obj_clear_flag(headerLeft, LV_OBJ_FLAG_SCROLLABLE);
 
-  backBtn = lv_label_create(header);
-  lv_obj_set_style_text_font(backBtn, &lv_font_montserrat_18, 0);
-  lv_obj_set_style_text_color(backBtn, lv_color_hex(COL_ACCENT), 0);
-  lv_label_set_text(backBtn, LV_SYMBOL_LEFT);
-  lv_obj_add_flag(backBtn, LV_OBJ_FLAG_CLICKABLE);
-  lv_obj_set_ext_click_area(backBtn, 12);
+  backBtn = lv_btn_create(headerLeft);
+  lv_obj_set_size(backBtn, 56, 38);
+  lv_obj_set_style_bg_color(backBtn, lv_color_hex(COL_SURFACE_2), 0);
+  lv_obj_set_style_bg_opa(backBtn, LV_OPA_COVER, 0);
+  lv_obj_set_style_border_width(backBtn, 1, 0);
+  lv_obj_set_style_border_color(backBtn, lv_color_hex(COL_BORDER), 0);
+  lv_obj_set_style_radius(backBtn, 8, 0);
+  lv_obj_set_style_shadow_width(backBtn, 0, 0);
+  lv_obj_set_style_pad_all(backBtn, 0, 0);
+  lv_obj_set_ext_click_area(backBtn, 16);
   lv_obj_add_event_cb(backBtn, backEvent, LV_EVENT_CLICKED, nullptr);
   lv_obj_add_flag(backBtn, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_t *backIcon = lv_label_create(backBtn);
+  lv_obj_set_style_text_font(backIcon, &lv_font_montserrat_22, 0);
+  lv_obj_set_style_text_color(backIcon, lv_color_hex(COL_ACCENT), 0);
+  lv_label_set_text(backIcon, LV_SYMBOL_LEFT);
+  lv_obj_center(backIcon);
 
-  titleLabel = lv_label_create(header);
+  titleLabel = lv_label_create(headerLeft);
   lv_obj_set_style_text_font(titleLabel, &lv_font_montserrat_22, 0);
   lv_obj_set_style_text_color(titleLabel, lv_color_hex(COL_TEXT), 0);
   lv_label_set_long_mode(titleLabel, LV_LABEL_LONG_DOT);
   lv_obj_set_width(titleLabel, 140);
 
-  stateLabel = lv_label_create(header);
+  stateLabel = lv_label_create(headerLeft);
   lv_obj_set_style_text_font(stateLabel, &lv_font_montserrat_12, 0);
   lv_obj_set_style_text_color(stateLabel, lv_color_hex(COL_MUTED), 0);
   lv_label_set_long_mode(stateLabel, LV_LABEL_LONG_DOT);
@@ -2929,21 +2973,56 @@ void ui_begin() {
   // Freshness indicator ("Live" / "Ns ago" / "Stale") removed per request.
   // freshLabel stays null; refreshFreshness() no-ops safely on the null guard.
 
-  connIcon = lv_label_create(header);
+  lv_obj_t *headerCenter = lv_obj_create(header);
+  lv_obj_remove_style_all(headerCenter);
+  lv_obj_set_size(headerCenter, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+  lv_obj_set_flex_flow(headerCenter, LV_FLEX_FLOW_ROW);
+  lv_obj_set_flex_align(headerCenter, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_style_pad_column(headerCenter, 6, 0);
+  lv_obj_clear_flag(headerCenter, LV_OBJ_FLAG_SCROLLABLE);
+
+  connIcon = lv_label_create(headerCenter);
   lv_obj_set_style_text_font(connIcon, &lv_font_montserrat_18, 0);
   lv_obj_set_style_text_color(connIcon, lv_color_hex(COL_DIM), 0);
   lv_label_set_text(connIcon, LV_SYMBOL_WIFI);
-  lv_obj_set_width(connIcon, 28);
   lv_obj_add_flag(connIcon, LV_OBJ_FLAG_CLICKABLE);
-  lv_obj_set_ext_click_area(connIcon, 12);
+  lv_obj_set_ext_click_area(connIcon, 14);
   lv_obj_add_event_cb(connIcon, connIconEvent, LV_EVENT_CLICKED, nullptr);
 
-  versionLabel = lv_label_create(header);
+  versionLabel = lv_label_create(headerCenter);
   lv_obj_set_style_text_font(versionLabel, &lv_font_montserrat_12, 0);
   lv_obj_set_style_text_color(versionLabel, lv_color_hex(COL_DIM), 0);
-  lv_obj_set_width(versionLabel, 48);
-  lv_obj_set_style_text_align(versionLabel, LV_TEXT_ALIGN_RIGHT, 0);
   lv_label_set_text(versionLabel, (String("v") + FIRMWARE_VERSION).c_str());
+  lv_obj_add_flag(versionLabel, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_set_ext_click_area(versionLabel, 12);
+  lv_obj_add_event_cb(versionLabel, versionEvent, LV_EVENT_CLICKED, nullptr);
+
+  lv_obj_t *headerRight = lv_obj_create(header);
+  lv_obj_remove_style_all(headerRight);
+  lv_obj_set_width(headerRight, 0);
+  lv_obj_set_flex_grow(headerRight, 1);
+  lv_obj_set_height(headerRight, LV_SIZE_CONTENT);
+  lv_obj_set_flex_flow(headerRight, LV_FLEX_FLOW_ROW);
+  lv_obj_set_flex_align(headerRight, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_style_pad_right(headerRight, 2, 0);
+  lv_obj_clear_flag(headerRight, LV_OBJ_FLAG_SCROLLABLE);
+
+  lv_obj_t *menuBtn = lv_btn_create(headerRight);
+  lv_obj_set_size(menuBtn, 68, 38);
+  lv_obj_set_style_bg_color(menuBtn, lv_color_hex(COL_SURFACE_2), 0);
+  lv_obj_set_style_bg_opa(menuBtn, LV_OPA_COVER, 0);
+  lv_obj_set_style_border_width(menuBtn, 1, 0);
+  lv_obj_set_style_border_color(menuBtn, lv_color_hex(COL_BORDER), 0);
+  lv_obj_set_style_radius(menuBtn, 8, 0);
+  lv_obj_set_style_shadow_width(menuBtn, 0, 0);
+  lv_obj_set_style_pad_all(menuBtn, 0, 0);
+  lv_obj_set_ext_click_area(menuBtn, 20);
+  lv_obj_add_event_cb(menuBtn, menuEvent, LV_EVENT_CLICKED, nullptr);
+  lv_obj_t *menuIcon = lv_label_create(menuBtn);
+  lv_obj_set_style_text_font(menuIcon, &lv_font_montserrat_22, 0);
+  lv_obj_set_style_text_color(menuIcon, lv_color_hex(COL_ACCENT), 0);
+  lv_label_set_text(menuIcon, LV_SYMBOL_LIST);
+  lv_obj_center(menuIcon);
 
   alertBanner = lv_obj_create(root);
   lv_obj_remove_style_all(alertBanner);
@@ -3129,7 +3208,8 @@ void ui_loop() {
   if (currentPage == AMS_OVERVIEW_PAGE) {
     return;
   }
-  if (now - lastActivityMs >= IDLE_RETURN_MS) {
+  const int idleSec = config().idleReturnSec;
+  if (idleSec > 0 && now - lastActivityMs >= static_cast<unsigned long>(idleSec) * 1000UL) {
     gotoPage(AMS_OVERVIEW_PAGE);
   }
 }

@@ -33,8 +33,10 @@ static inline void *lv_psram_realloc(void *p, size_t size) {
 #define LV_TICK_CUSTOM_INCLUDE "Arduino.h"
 #define LV_TICK_CUSTOM_SYS_TIME_EXPR (millis())
 
-#define LV_DISP_DEF_REFR_PERIOD 16
-#define LV_INDEV_DEF_READ_PERIOD 10
+#define LV_DISP_DEF_REFR_PERIOD 10
+#define LV_INDEV_DEF_READ_PERIOD 8
+#define LV_IMG_CACHE_DEF_SIZE 4
+#define LV_DISP_ROT_MAX_BUF (16U * 1024U)
 
 #define LV_USE_LOG 0
 #define LV_USE_PERF_MONITOR 0

@@ -44,6 +44,33 @@ void normalizeDisplayTimeouts(int &dimMin, int &offMin) {
   dimMin = 15;
   offMin = 30;
 }
+
+void normalizeBrightness(int &fullPct, int &dimPct) {
+  if (fullPct != 50 && fullPct != 75 && fullPct != 100) {
+    fullPct = 100;
+  }
+  if (dimPct != 10 && dimPct != 20 && dimPct != 35) {
+    dimPct = 20;
+  }
+}
+
+void normalizeSpoolThresholds(int &lowPct, int &critPct) {
+  if (lowPct != 20 && lowPct != 30 && lowPct != 40) {
+    lowPct = SPOOL_LOW_PERCENT;
+  }
+  if (critPct != 10 && critPct != 15 && critPct != 20) {
+    critPct = SPOOL_CRITICAL_PERCENT;
+  }
+  if (critPct >= lowPct) {
+    critPct = (lowPct <= 20) ? 10 : 15;
+  }
+}
+
+void normalizeIdleReturn(int &sec) {
+  if (sec != 0 && sec != 60 && sec != 180) {
+    sec = 60;
+  }
+}
 }  // namespace
 
 AppConfig &config() { return g_config; }
@@ -67,12 +94,20 @@ void AppConfig::load() {
   otaPassword = p.getString("otaPass", OTA_PASSWORD);
   displayDimMin = p.getInt("dimMin", 5);
   displayOffMin = p.getInt("offMin", 15);
+  displayFullBrightPct = p.getInt("brtFull", 100);
+  displayDimBrightPct = p.getInt("brtDim", 20);
+  spoolLowPct = p.getInt("spLow", SPOOL_LOW_PERCENT);
+  spoolCritPct = p.getInt("spCrit", SPOOL_CRITICAL_PERCENT);
+  idleReturnSec = p.getInt("idleSec", 60);
   displayTimezone = p.getString("tz", DISPLAY_TIMEZONE);
   if (!displayTimezone.length()) {
     displayTimezone = DISPLAY_TIMEZONE;
   }
   p.end();
   normalizeDisplayTimeouts(displayDimMin, displayOffMin);
+  normalizeBrightness(displayFullBrightPct, displayDimBrightPct);
+  normalizeSpoolThresholds(spoolLowPct, spoolCritPct);
+  normalizeIdleReturn(idleReturnSec);
 }
 
 void AppConfig::save() const {
@@ -93,8 +128,21 @@ void AppConfig::save() const {
   p.putString("otaPass", otaPassword);
   p.putInt("dimMin", displayDimMin);
   p.putInt("offMin", displayOffMin);
+  p.putInt("brtFull", displayFullBrightPct);
+  p.putInt("brtDim", displayDimBrightPct);
+  p.putInt("spLow", spoolLowPct);
+  p.putInt("spCrit", spoolCritPct);
+  p.putInt("idleSec", idleReturnSec);
   p.putString("tz", displayTimezone);
   p.end();
+}
+
+void AppConfig::factoryReset() {
+  Preferences p;
+  p.begin(kNs, /*readOnly=*/false);
+  p.clear();
+  p.end();
+  load();
 }
 
 bool AppConfig::wifiConfigured() const {
@@ -133,6 +181,46 @@ void AppConfig::setDisplayTimeouts(int dimMin, int offMin) {
   p.begin(kNs, /*readOnly=*/false);
   p.putInt("dimMin", displayDimMin);
   p.putInt("offMin", displayOffMin);
+  p.end();
+}
+
+void AppConfig::setDisplayBrightness(int fullPct, int dimPct) {
+  normalizeBrightness(fullPct, dimPct);
+  if (fullPct == displayFullBrightPct && dimPct == displayDimBrightPct) {
+    return;
+  }
+  displayFullBrightPct = fullPct;
+  displayDimBrightPct = dimPct;
+  Preferences p;
+  p.begin(kNs, /*readOnly=*/false);
+  p.putInt("brtFull", displayFullBrightPct);
+  p.putInt("brtDim", displayDimBrightPct);
+  p.end();
+}
+
+void AppConfig::setSpoolThresholds(int lowPct, int critPct) {
+  normalizeSpoolThresholds(lowPct, critPct);
+  if (lowPct == spoolLowPct && critPct == spoolCritPct) {
+    return;
+  }
+  spoolLowPct = lowPct;
+  spoolCritPct = critPct;
+  Preferences p;
+  p.begin(kNs, /*readOnly=*/false);
+  p.putInt("spLow", spoolLowPct);
+  p.putInt("spCrit", spoolCritPct);
+  p.end();
+}
+
+void AppConfig::setIdleReturnSec(int sec) {
+  normalizeIdleReturn(sec);
+  if (sec == idleReturnSec) {
+    return;
+  }
+  idleReturnSec = sec;
+  Preferences p;
+  p.begin(kNs, /*readOnly=*/false);
+  p.putInt("idleSec", idleReturnSec);
   p.end();
 }
 

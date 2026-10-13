@@ -5,6 +5,7 @@
 
 #include "display_poll.h"
 #include "printer_list.h"
+#include "touch_input.h"
 
 // Pick a printer. With FilaMan configured, the choice is stored and the next
 // Display API poll follows that printer. Otherwise it is published over MQTT.
@@ -176,6 +177,10 @@ void printer_select_open() {
   if (!overlay) {
     return;
   }
+  touch_input_cooldown(280);
+  if (lv_indev_t *indev = lv_indev_get_act()) {
+    lv_indev_wait_release(indev);
+  }
   lv_obj_clear_flag(overlay, LV_OBJ_FLAG_HIDDEN);
   lv_obj_move_foreground(overlay);
   showList();
@@ -183,6 +188,10 @@ void printer_select_open() {
 
 void printer_select_close() {
   if (overlay) {
+    touch_input_cooldown(280);
+    if (lv_indev_t *indev = lv_indev_get_act()) {
+      lv_indev_wait_release(indev);
+    }
     lv_obj_add_flag(overlay, LV_OBJ_FLAG_HIDDEN);
   }
 }

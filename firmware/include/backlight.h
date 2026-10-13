@@ -7,5 +7,6 @@
 
 void backlight_begin();
 void backlight_loop();
+void backlight_apply();
 // False means this sample must not reach the UI (the wake tap, until release).
 bool backlight_filter_touch(bool pressed);

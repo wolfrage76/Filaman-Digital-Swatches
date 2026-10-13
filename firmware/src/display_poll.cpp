@@ -49,6 +49,7 @@ unsigned long wifiReadyAtMs = 0;
 unsigned long lastLowHeapLogMs = 0;
 int activePrinterId = 0;
 char pollStatus[96] = "starting";
+uint32_t lastPollLatencyMs = 0;
 bool begun = false;
 bool lastOk = false;
 int consecutiveFails = 0;
@@ -697,7 +698,9 @@ void pollSnapshot() {
   }
 
   PsramDoc doc;
+  const unsigned long t0 = millis();
   FmResult r = filaman.fetchDisplaySnapshot(activePrinterId, true, doc);
+  lastPollLatencyMs = static_cast<uint32_t>(millis() - t0);
   if (r.notModified) {
     lastOk = true;
     consecutiveFails = 0;
@@ -777,6 +780,8 @@ String display_poll_active_printer() {
 }
 
 const char *display_poll_status() { return pollStatus; }
+
+uint32_t display_poll_last_latency_ms() { return lastPollLatencyMs; }
 
 void display_poll_loop() {
   if (!display_poll_active() || WiFi.status() != WL_CONNECTED) {

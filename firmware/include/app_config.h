@@ -25,15 +25,24 @@ struct AppConfig {
   String otaPassword;
   int displayDimMin = 5;
   int displayOffMin = 15;
+  int displayFullBrightPct = 100;   // 50, 75, 100
+  int displayDimBrightPct = 20;     // 10, 20, 35
+  int spoolLowPct = SPOOL_LOW_PERCENT;        // 20, 30, 40
+  int spoolCritPct = SPOOL_CRITICAL_PERCENT;  // 10, 15, 20
+  int idleReturnSec = 60;           // 0 (off), 60, 180
   String displayTimezone;
 
   void load();               // read all fields from NVS (macro = default)
   void save() const;         // persist all fields to NVS
+  void factoryReset();       // clear NVS namespace "cfg" and reload compile-time defaults
   bool wifiConfigured() const;  // true once a real SSID is set (not the sentinel)
   void setWifi(const String &ssid, const String &pass);  // set + persist just WiFi
   void setFilamanPrinterId(int id);  // remember the on-screen printer choice
   void setFilamanBaseUrl(const String &url);  // persist a URL that actually answered
   void setDisplayTimeouts(int dimMin, int offMin);  // minutes; dim must be shorter than off
+  void setDisplayBrightness(int fullPct, int dimPct);
+  void setSpoolThresholds(int lowPct, int critPct);
+  void setIdleReturnSec(int sec);
 };
 
 // Process-wide config singleton (house style, like `displayMqtt`).

@@ -18,11 +18,26 @@ constexpr int TOUCH_MAP_Y2 = 0;
 // CrowPanel v3.0 straps PCA9557 A2/A1/A0 to ground.
 constexpr uint8_t PCA9557_ADDR = 0x18;
 
+// Hold release for 45 ms so a single missed capacitive frame never splits one
+// press into two clicks, then block re-presses for 240 ms to prevent accidental
+// double-taps from clicking through to the next screen.
+constexpr unsigned long RELEASE_HOLD_MS = 45;
+constexpr unsigned long REPRESS_COOLDOWN_MS = 240;
+
 TAMC_GT911 touch(TOUCH_SDA, TOUCH_SCL, -1, -1, TOUCH_MAP_X1, TOUCH_MAP_Y1);
 
 int screenWidth = 800;
 int screenHeight = 480;
+uint8_t gt911Addr = 0;
 bool touchReady = false;
+
+bool rawPressed = false;
+bool reportedPressed = false;
+bool waitForFullRelease = false;
+int16_t lastX = 0;
+int16_t lastY = 0;
+unsigned long lastRawTouchMs = 0;
+unsigned long blockPressUntilMs = 0;
 
 int mapAxis(int value, int inMin, int inMax, int outMax) {
   if (inMin == inMax) {
@@ -48,6 +63,21 @@ bool i2cWriteReg(uint8_t addr, uint8_t reg, uint8_t value) {
   Wire.write(reg);
   Wire.write(value);
   return Wire.endTransmission() == 0;
+}
+
+// Read 16-bit GT911 register without clearing 0x814E when bufferStatus == 0.
+bool gt911ReadReg(uint8_t addr, uint16_t reg, uint8_t &out) {
+  Wire.beginTransmission(addr);
+  Wire.write(static_cast<uint8_t>(reg >> 8));
+  Wire.write(static_cast<uint8_t>(reg & 0xFF));
+  if (Wire.endTransmission() != 0) {
+    return false;
+  }
+  if (Wire.requestFrom(addr, static_cast<uint8_t>(1)) != 1) {
+    return false;
+  }
+  out = Wire.read();
+  return true;
 }
 
 // GPIO19/20 are also the USB Serial/JTAG pads. Display init can restore the
@@ -108,6 +138,7 @@ void touch_input_begin(int width, int height) {
     return;
   }
 
+  gt911Addr = addr;
   touch.begin(addr);
   touch.setRotation(ROTATION_NORMAL);
   touchReady = true;
@@ -116,20 +147,71 @@ void touch_input_begin(int width, int height) {
   log_e("GT911 touch at 0x%02X", addr);
 }
 
+void touch_input_cooldown(unsigned long ms) {
+  const unsigned long until = millis() + ms;
+  if (static_cast<long>(until - blockPressUntilMs) > 0) {
+    blockPressUntilMs = until;
+  }
+  reportedPressed = false;
+  waitForFullRelease = true;
+}
+
 bool touch_input_read(int16_t &x, int16_t &y, bool &pressed) {
   if (!touchReady) {
     pressed = false;
     return false;
   }
 
-  touch.read();
-  if (!touch.isTouched) {
+  const unsigned long now = millis();
+
+  // Only call TAMC_GT911::read() when GT911_POINT_INFO (0x814E) bit 7 is set.
+  // Otherwise TAMC_GT911::read() sees 0x00 between 10 ms scan frames and falsely
+  // reports isTouched=false mid-press, turning one tap into multiple clicks.
+  uint8_t pointInfo = 0;
+  if (gt911ReadReg(gt911Addr, GT911_POINT_INFO, pointInfo) && (pointInfo & 0x80)) {
+    touch.read();
+    rawPressed = touch.isTouched;
+    if (rawPressed) {
+      lastX = static_cast<int16_t>(
+          mapAxis(touch.points[0].x, TOUCH_MAP_X1, TOUCH_MAP_X2, screenWidth - 1));
+      lastY = static_cast<int16_t>(
+          mapAxis(touch.points[0].y, TOUCH_MAP_Y1, TOUCH_MAP_Y2, screenHeight - 1));
+      lastRawTouchMs = now;
+    }
+  }
+
+  const bool debouncedDown =
+      rawPressed || (reportedPressed && (now - lastRawTouchMs < RELEASE_HOLD_MS));
+
+  if (waitForFullRelease) {
+    if (!debouncedDown) {
+      waitForFullRelease = false;
+    }
+    x = lastX;
+    y = lastY;
     pressed = false;
     return true;
   }
 
-  x = static_cast<int16_t>(mapAxis(touch.points[0].x, TOUCH_MAP_X1, TOUCH_MAP_X2, screenWidth - 1));
-  y = static_cast<int16_t>(mapAxis(touch.points[0].y, TOUCH_MAP_Y1, TOUCH_MAP_Y2, screenHeight - 1));
-  pressed = true;
+  if (reportedPressed) {
+    if (!debouncedDown) {
+      reportedPressed = false;
+      const unsigned long until = now + REPRESS_COOLDOWN_MS;
+      if (static_cast<long>(until - blockPressUntilMs) > 0) {
+        blockPressUntilMs = until;
+      }
+    }
+  } else if (debouncedDown) {
+    if (static_cast<long>(now - blockPressUntilMs) >= 0) {
+      reportedPressed = true;
+    } else {
+      // Finger touched down during cooldown; wait for lift so it doesn't fire late.
+      waitForFullRelease = true;
+    }
+  }
+
+  x = lastX;
+  y = lastY;
+  pressed = reportedPressed;
   return true;
 }

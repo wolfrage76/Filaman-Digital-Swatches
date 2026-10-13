@@ -17,3 +17,4 @@ void display_poll_set_printer(const String &filamanPrinterId);
 String display_poll_active_printer();
 // Short reason the board is or isn't updating. Safe to show on the config page.
 const char *display_poll_status();
+uint32_t display_poll_last_latency_ms();
