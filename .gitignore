@@ -232,3 +232,4 @@ firmware/.dummy/
 firmware/.pio/
 bridge/nohup.out
 **/__pycache__/
+firmware/components/arduino
