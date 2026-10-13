@@ -12,6 +12,7 @@ import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import urljoin
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -68,10 +69,18 @@ class Config:
     display_topic_prefix: str = os.getenv("DISPLAY_TOPIC_PREFIX", "display/h2c").strip("/")
     # ETA clock timezone (later configurable via web config). Default US Eastern (EST/EDT).
     display_tz: str = os.getenv("DISPLAY_TZ", "America/New_York")
-    poll_seconds: int = int(os.getenv("POLL_SECONDS", "30"))
+    poll_seconds: int = int(os.getenv("POLL_SECONDS", "60"))
     ams2pro_count: int = int(os.getenv("AMS2PRO_COUNT", "4"))
     amsht_count: int = int(os.getenv("AMSHT_COUNT", "2"))
     amsht_max: int = int(os.getenv("AMSHT_MAX", "4"))
+    display_http_enabled: bool = env_bool("DISPLAY_HTTP_ENABLED", True)
+    display_http_host: str = os.getenv("DISPLAY_HTTP_HOST", "0.0.0.0")
+    display_http_port: int = int(os.getenv("DISPLAY_HTTP_PORT", "8090"))
+    # Persists the device-selected printer id across restarts (see ctrl/printer topic).
+    bridge_state_file: str = os.getenv(
+        "BRIDGE_STATE_FILE",
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "bridge_state.json"),
+    )
 
 
 CONFIG = Config()
@@ -79,6 +88,17 @@ STOP_EVENT = threading.Event()
 REFRESH_EVENT = threading.Event()
 LATEST_STATUS: dict[str, Any] = {}
 LATEST_STATUS_LOCK = threading.Lock()
+LATEST_DISPLAY_STATE: dict[str, Any] = {}
+LATEST_DISPLAY_STATE_LOCK = threading.Lock()
+ACTIVE_PRINTER_ID: str = ""
+ACTIVE_PRINTER_LOCK = threading.Lock()
+# AMS slot/meta topics published last cycle, so we can clear (empty-retain) the
+# ones that disappear when AMS units are unplugged or the monitored printer changes.
+PUBLISHED_AMS_TOPICS: set[str] = set()
+BRIDGE_VERSION = "0.11.0"
+SCHEMA_VERSION = 2
+SPOOL_LOW_PERCENT = int(os.getenv("SPOOL_LOW_PERCENT", "30"))
+SPOOL_CRITICAL_PERCENT = int(os.getenv("SPOOL_CRITICAL_PERCENT", "15"))
 
 
 def normalize_hex_color(value: Any) -> str:
@@ -121,6 +141,53 @@ def printer_topic() -> str:
     return f"{CONFIG.display_topic_prefix}/printer"
 
 
+def alerts_topic() -> str:
+    return f"{CONFIG.display_topic_prefix}/alerts"
+
+
+def overview_topic() -> str:
+    return f"{CONFIG.display_topic_prefix}/ams/overview"
+
+
+def bridge_status_topic() -> str:
+    return f"{CONFIG.display_topic_prefix}/bridge/status"
+
+
+def command_request_topic() -> str:
+    return f"{CONFIG.display_topic_prefix}/command/request"
+
+
+def command_response_topic() -> str:
+    return f"{CONFIG.display_topic_prefix}/command/response"
+
+
+def printers_topic() -> str:
+    """Retained list of selectable printers for the on-device picker."""
+    return f"{CONFIG.display_topic_prefix}/printers"
+
+
+def printer_ctrl_topic() -> str:
+    """Device -> bridge: which printer id to monitor (retained)."""
+    return f"{CONFIG.display_topic_prefix}/ctrl/printer"
+
+
+def load_selected_printer_id() -> str:
+    try:
+        with open(CONFIG.bridge_state_file, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        return str(data.get("printer_id") or "")
+    except (OSError, ValueError):
+        return ""
+
+
+def save_selected_printer_id(printer_id: str) -> None:
+    try:
+        with open(CONFIG.bridge_state_file, "w", encoding="utf-8") as handle:
+            json.dump({"printer_id": str(printer_id)}, handle)
+    except OSError as exc:
+        LOGGER.warning("Could not persist selected printer id: %s", exc)
+
+
 class BambuddyClient:
     def __init__(self, config: Config) -> None:
         self.config = config
@@ -141,6 +208,24 @@ class BambuddyClient:
     def list_printers(self) -> list[dict[str, Any]]:
         data = self.request_json("GET", "printers/")
         return data if isinstance(data, list) else []
+
+    def printers_summary(self, active_id: str) -> list[dict[str, Any]]:
+        """Compact {id,name,model,serial,active} list for the on-device picker."""
+        summary: list[dict[str, Any]] = []
+        for printer in self.list_printers():
+            pid = str(first_value(printer, ("id", "printer_id"), ""))
+            if not pid:
+                continue
+            summary.append(
+                {
+                    "id": pid,
+                    "name": str(first_value(printer, ("name", "printer_name"), pid)),
+                    "model": str(first_value(printer, ("model", "printer_model", "machine_type", "machine_model"), "")),
+                    "serial": str(first_value(printer, ("serial_number", "serial", "dev_id"), "")),
+                    "active": pid == str(active_id),
+                }
+            )
+        return summary
 
     def resolve_printer_id(self) -> str:
         if self.config.h2c_printer_id:
@@ -166,6 +251,70 @@ class BambuddyClient:
             LOGGER.info("Requested Bambuddy status refresh")
         except requests.HTTPError as exc:
             LOGGER.warning("Bambuddy refresh failed: %s", exc)
+
+    def queue_depth(self, printer_id: str) -> int:
+        try:
+            data = self.request_json("GET", "queue/", params={"printer_id": printer_id})
+        except requests.HTTPError:
+            try:
+                data = self.request_json("GET", "queue/")
+            except requests.HTTPError:
+                return 0
+        items: list[dict[str, Any]] = []
+        if isinstance(data, list):
+            items = [item for item in data if isinstance(item, dict)]
+        elif isinstance(data, dict):
+            for key in ("items", "queue", "jobs", "data"):
+                value = data.get(key)
+                if isinstance(value, list):
+                    items = [item for item in value if isinstance(item, dict)]
+                    break
+        count = 0
+        for item in items:
+            item_printer = item.get("printer_id")
+            if item_printer is not None and str(item_printer) != str(printer_id):
+                continue
+            status = str(item.get("status", "pending")).lower()
+            if status in {"pending", "queued", "waiting", ""}:
+                count += 1
+        return count
+
+    def send_printer_command(self, printer_id: str, action: str, arg: str | None = None) -> tuple[bool, str]:
+        """Execute a safe printer control action via Bambuddy REST."""
+        action = (action or "").strip().lower()
+        try:
+            if action == "pause":
+                self.request_json("POST", f"printers/{printer_id}/print/pause")
+                return True, "Pause sent"
+            if action == "resume":
+                self.request_json("POST", f"printers/{printer_id}/print/resume")
+                return True, "Resume sent"
+            if action == "refresh":
+                self.request_json("POST", f"printers/{printer_id}/refresh-status")
+                return True, "Refresh requested"
+            if action == "light":
+                on = str(arg or "").strip().lower() in {"1", "true", "on", "yes"}
+                self.request_json("POST", f"printers/{printer_id}/chamber-light", params={"on": on})
+                return True, f"Light {'on' if on else 'off'}"
+            if action == "speed":
+                mode = int(arg or "0")
+                if mode not in (1, 2, 3, 4):
+                    return False, "Speed mode must be 1-4"
+                self.request_json("POST", f"printers/{printer_id}/print-speed", params={"mode": mode})
+                return True, f"Speed mode {mode}"
+            if action == "stop":
+                return False, "Stop disabled until confirmed safeguards"
+            return False, f"Unknown action: {action}"
+        except requests.HTTPError as exc:
+            detail = ""
+            try:
+                detail = exc.response.text[:200] if exc.response is not None else ""
+            except Exception:
+                detail = str(exc)
+            LOGGER.warning("Command %s failed: %s %s", action, exc, detail)
+            return False, f"Command failed: {exc.response.status_code if exc.response else 'error'}"
+        except (TypeError, ValueError) as exc:
+            return False, str(exc)
 
     def list_spools(self) -> list[dict[str, Any]]:
         data = self.request_json("GET", "inventory/spools")
@@ -306,11 +455,13 @@ def empty_slot_payload(ams_id: int, slot_id: int) -> dict[str, Any]:
         "nozzle_max": None,
         "remaining_percent": None,
         "remaining_grams": None,
+        "remaining_source": "unknown",
         "cost_remaining": None,
         "last_used": "",
         "rfid": False,
         "backup_badge": "",
         "active": False,
+        "schema_version": SCHEMA_VERSION,
     }
 
 
@@ -344,25 +495,30 @@ def spool_remaining_grams(spool: dict[str, Any]) -> float | None:
     return None
 
 
-def spool_remaining_percent(spool: dict[str, Any], tray: dict[str, Any] | None = None) -> int | None:
+def spool_remaining_percent(
+    spool: dict[str, Any], tray: dict[str, Any] | None = None
+) -> tuple[int | None, str]:
     """Prefer inventory math; fall back to AMS tray.remain when 0-100."""
+    if spool:
+        for key in ("remaining_percent", "remaining_percentage", "percent", "percent_remaining"):
+            value = as_float(spool.get(key))
+            if value is not None:
+                return max(0, min(100, int(round(value)))), "inventory"
+        remaining = spool_remaining_grams(spool)
+        label = as_float(
+            first_value(
+                spool,
+                ("label_weight", "initial_weight", "spool_weight", "total_weight", "start_weight"),
+            )
+        )
+        if remaining is not None and label is not None and label > 0:
+            return max(0, min(100, int(round(100.0 * remaining / label)))), "inventory"
+
     if tray:
         tray_remain = as_float(tray.get("remain"))
         if tray_remain is not None and 0 <= tray_remain <= 100:
-            return int(round(tray_remain))
-
-    if not spool:
-        return None
-    for key in ("remaining_percent", "remaining_percentage", "percent", "percent_remaining"):
-        value = as_float(spool.get(key))
-        if value is not None:
-            return max(0, min(100, int(round(value))))
-
-    remaining = spool_remaining_grams(spool)
-    label = as_float(first_value(spool, ("label_weight", "initial_weight", "spool_weight", "total_weight", "start_weight")))
-    if remaining is not None and label is not None and label > 0:
-        return max(0, min(100, int(round(100.0 * remaining / label))))
-    return None
+            return int(round(tray_remain)), "ams"
+    return None, "unknown"
 
 
 def spool_cost_remaining(spool: dict[str, Any], remaining_grams: float | None) -> str | None:
@@ -432,7 +588,7 @@ def combine_slot_payload(ams_id: int, slot_id: int, tray: dict[str, Any], spool:
     tray_type = first_value(tray, ("tray_type", "filament_type"), "")
     empty = not str(tray_type or "").strip() and not spool
     remaining_grams = spool_remaining_grams(spool) if spool else None
-    remaining = spool_remaining_percent(spool, tray)
+    remaining, remaining_source = spool_remaining_percent(spool, tray)
     last_used = relative_age(first_value(spool, ("last_used", "updated_at", "last_used_at", "modified")))
     # state 27 is observed as the actively feeding tray on H2C AMS firmware.
     tray_state = tray.get("state")
@@ -450,11 +606,13 @@ def combine_slot_payload(ams_id: int, slot_id: int, tray: dict[str, Any], spool:
         "nozzle_max": first_value(spool, ("nozzle_max", "nozzle_temp_max"), first_value(filament, ("nozzle_temp_max",), first_value(tray, ("nozzle_temp_max",), None))),
         "remaining_percent": remaining,
         "remaining_grams": int(round(remaining_grams)) if remaining_grams is not None else None,
+        "remaining_source": remaining_source,
         "cost_remaining": spool_cost_remaining(spool, remaining_grams) if spool else None,
         "last_used": last_used,
         "rfid": tray_has_rfid(tray, spool),
         "backup_badge": "",
         "active": active,
+        "schema_version": SCHEMA_VERSION,
     }
 
 
@@ -490,21 +648,26 @@ def build_slot_payloads(
             "ams_kind": "ams_ht" if is_ams_ht_unit(ams_unit) else "ams2pro",
             "temperature": first_value(ams_unit, ("temp", "temperature"), None),
             "humidity": first_value(ams_unit, ("humidity", "humidity_raw"), None),
+            "dry_status": first_value(ams_unit, ("dry_status",), None),
+            "dry_target_temp": first_value(ams_unit, ("dry_target_temp",), None),
+            "dry_time": first_value(ams_unit, ("dry_time",), None),
+            "schema_version": SCHEMA_VERSION,
         }
         for tray in extract_trays(ams_unit):
             slot_id = int(first_value(tray, ("id", "tray_id", "slot"), 0))
             spool = assignments.get((raw_id, slot_id)) or lookup_spool(spool_index, tray)
             payloads[(display_id, slot_id)] = combine_slot_payload(display_id, slot_id, tray, spool)
 
-    for ams_id in range(CONFIG.ams2pro_count):
-        meta.setdefault(ams_id, {"ams_id": ams_id, "ams_kind": "ams2pro", "temperature": None, "humidity": None})
-        for slot_id in range(4):
-            payloads.setdefault((ams_id, slot_id), empty_slot_payload(ams_id, slot_id))
-
-    for offset in range(CONFIG.amsht_max):
-        ams_id = CONFIG.ams2pro_count + offset
-        meta.setdefault(ams_id, {"ams_id": ams_id, "ams_kind": "ams_ht", "temperature": None, "humidity": None})
-        payloads.setdefault((ams_id, 0), empty_slot_payload(ams_id, 0))
+    # Only actually-connected AMS units (from unit_map above) are published now;
+    # we no longer pad to a fixed AMS 2 Pro / AMS-HT count. A connected AMS 2 Pro
+    # still reports all 4 trays (empty or not), so fill any gaps in its slot range
+    # so the detail page always shows 4 slots for a present unit.
+    for display_id, ams_unit in unit_map:
+        if is_ams_ht_unit(ams_unit):
+            payloads.setdefault((display_id, 0), empty_slot_payload(display_id, 0))
+        else:
+            for slot_id in range(4):
+                payloads.setdefault((display_id, slot_id), empty_slot_payload(display_id, slot_id))
 
     # Second pass: infer refill/backup peers now that all slots are known.
     for (ams_id, slot_id), payload in list(payloads.items()):
@@ -679,8 +842,13 @@ def active_tray_summary(slot_payloads: dict[tuple[int, int], dict[str, Any]]) ->
                 "active_color": payload.get("color") or "#202020",
                 "active_material": material,
                 "active_label": label,
+                "active_remaining": (
+                    f"{payload.get('remaining_percent')}%"
+                    if payload.get("remaining_percent") is not None
+                    else (f"{payload.get('remaining_grams')}g" if payload.get("remaining_grams") is not None else "")
+                ),
             }
-    return {"active_color": "#202020", "active_material": "", "active_label": ""}
+    return {"active_color": "#202020", "active_material": "", "active_label": "", "active_remaining": ""}
 
 
 def format_filament_used(status: dict[str, Any], archive_total_g: float | None) -> str | None:
@@ -707,6 +875,9 @@ def build_printer_payload(
     slot_payloads: dict[tuple[int, int], dict[str, Any]] | None = None,
     next_job: str = "",
     archive_filament_g: float | None = None,
+    queue_depth: int = 0,
+    alert_count: int = 0,
+    printer_name: str = "",
 ) -> dict[str, Any]:
     current_print = status.get("current_print") if isinstance(status.get("current_print"), dict) else {}
     # Live Bambuddy H2C reports remaining_time in minutes (e.g. 9 == 9m).
@@ -770,6 +941,7 @@ def build_printer_payload(
     bed = as_int_temp(first_value(temps, ("bed",), first_value(status, ("bed_temper",), None)))
     bed_target = as_int_temp(first_value(temps, ("bed_target",), first_value(status, ("bed_target_temper",), None)))
     chamber = as_int_temp(first_value(temps, ("chamber",), first_value(status, ("chamber_temper",), None)))
+    chamber_target = as_int_temp(first_value(temps, ("chamber_target",), None))
 
     if nozzle_target == 0:
         nozzle_target = None
@@ -777,19 +949,37 @@ def build_printer_payload(
         nozzle_2_target = None
     if bed_target == 0:
         bed_target = None
+    if chamber_target == 0:
+        chamber_target = None
 
     active = active_tray_summary(slot_payloads or {})
     has_active = bool(active.get("active_label"))
 
+    # Elapsed estimate from archive start if available; otherwise leave null.
+    elapsed_minutes = None
+    started = first_value(status, ("gcode_start_time", "print_start_time", "start_time"), None)
+    if started not in (None, ""):
+        try:
+            start_ts = float(started)
+            if start_ts > 1_000_000_000_000:
+                start_ts /= 1000.0
+            elapsed_minutes = max(0, int((time.time() - start_ts) / 60))
+        except (TypeError, ValueError):
+            elapsed_minutes = None
+
     return {
-        "name": CONFIG.h2c_name,
+        "schema_version": SCHEMA_VERSION,
+        # Name of the printer actually being polled (falls back to status/env).
+        "name": printer_name or str(first_value(status, ("name", "printer_name", "device_name"), CONFIG.h2c_name)),
         "serial": CONFIG.h2c_serial,
+        "connected": bool(status.get("connected", True)),
         "state": first_value(status, ("state", "gcode_state", "status"), "unknown"),
         "job_name": str(job_name or ""),
         "progress": progress_int,
         "remaining_time": format_remaining_time_minutes(remaining_minutes_int),
         "remaining_minutes": remaining_minutes_int,
         "remaining_seconds": remaining_seconds,
+        "elapsed_minutes": elapsed_minutes,
         "eta_clock": format_eta_clock(remaining_seconds),
         "layer": layer,
         "total_layers": total_layers,
@@ -798,10 +988,15 @@ def build_printer_payload(
         "nozzle_target": nozzle_target,
         "nozzle_2": nozzle_2,
         "nozzle_2_target": nozzle_2_target,
+        "nozzle_heating": bool(temps.get("nozzle_heating", False)),
+        "nozzle_2_heating": bool(temps.get("nozzle_2_heating", False)),
+        "bed_heating": bool(temps.get("bed_heating", False)),
+        "chamber_heating": bool(temps.get("chamber_heating", False)),
         "active_extruder": first_value(status, ("active_extruder",), 0),
         "bed": bed,
         "bed_target": bed_target,
         "chamber": chamber,
+        "chamber_target": chamber_target,
         "speed_level": speed_int,
         "speed_preset": SPEED_PRESETS.get(speed_int or -1, ""),
         "fan_part": first_value(status, ("cooling_fan_speed", "heatbreak_fan_speed"), None),
@@ -810,18 +1005,329 @@ def build_printer_payload(
         "wifi_signal": first_value(status, ("wifi_signal",), None),
         "hms": format_hms(status),
         "next_job": next_job,
+        "queue_depth": queue_depth,
+        "alert_count": alert_count,
         "chamber_light": decode_chamber_light(status),
         "door": decode_door(status),
         "filament_sensor": decode_filament_sensor(status, has_active),
         "active_color": active["active_color"],
         "active_material": active["active_material"],
         "active_label": active["active_label"],
+        "active_remaining": active.get("active_remaining") or "",
         "updated_at": int(time.time()),
     }
 
 
-def publish_json(client: mqtt.Client, topic: str, payload: dict[str, Any]) -> None:
-    client.publish(topic, json.dumps(payload, separators=(",", ":")), retain=True)
+LAST_PUBLISHED: dict[str, str] = {}
+
+
+def payload_fingerprint(payload: dict[str, Any]) -> str:
+    """Compare payloads ignoring always-changing timestamps."""
+    filtered = {k: v for k, v in payload.items() if k != "updated_at"}
+    return json.dumps(filtered, sort_keys=True, separators=(",", ":"), default=str)
+
+
+def publish_json(
+    client: mqtt.Client,
+    topic: str,
+    payload: dict[str, Any],
+    retain: bool = True,
+    *,
+    force: bool = False,
+) -> bool:
+    body = json.dumps(payload, separators=(",", ":"), default=str)
+    fingerprint = payload_fingerprint(payload)
+    if not force and LAST_PUBLISHED.get(topic) == fingerprint:
+        return False
+    client.publish(topic, body, retain=retain)
+    LAST_PUBLISHED[topic] = fingerprint
+    # Pace retained floods so the CrowPanel RGB panel isn't blanked by MQTT bursts.
+    time.sleep(0.25)
+    return True
+
+
+def clear_retained(client: mqtt.Client, topic: str) -> None:
+    """Delete a retained topic (empty payload) so stale AMS units drop off the panel."""
+    client.publish(topic, "", retain=True)
+    LAST_PUBLISHED.pop(topic, None)
+    time.sleep(0.05)
+
+
+def build_alerts(
+    status: dict[str, Any],
+    slot_payloads: dict[tuple[int, int], dict[str, Any]],
+) -> list[dict[str, Any]]:
+    alerts: list[dict[str, Any]] = []
+    connected = bool(status.get("connected", True))
+    state = str(first_value(status, ("state", "gcode_state", "status"), "")).upper()
+
+    if not connected:
+        alerts.append(
+            {
+                "id": "printer-offline",
+                "severity": "danger",
+                "title": "Printer offline",
+                "detail": "Bambuddy reports the printer is disconnected",
+                "source": "printer",
+                "acknowledged": False,
+            }
+        )
+
+    if state in {"PAUSE", "PAUSED"}:
+        alerts.append(
+            {
+                "id": "print-paused",
+                "severity": "warn",
+                "title": "Print paused",
+                "detail": str(first_value(status, ("subtask_name", "gcode_file"), "Job paused")),
+                "source": "printer",
+                "acknowledged": False,
+            }
+        )
+    if state in {"FAILED", "FAIL", "ERROR"}:
+        alerts.append(
+            {
+                "id": "print-failed",
+                "severity": "danger",
+                "title": "Print failed",
+                "detail": str(first_value(status, ("subtask_name", "gcode_file"), "Check printer")),
+                "source": "printer",
+                "acknowledged": False,
+            }
+        )
+
+    door = decode_door(status)
+    if door == "open" and state in {"RUNNING", "PRINTING", "PAUSE", "PAUSED"}:
+        alerts.append(
+            {
+                "id": "door-open",
+                "severity": "warn",
+                "title": "Door open",
+                "detail": "Chamber door is open during a job",
+                "source": "printer",
+                "acknowledged": False,
+            }
+        )
+
+    hms = status.get("hms") or status.get("hms_errors") or []
+    if isinstance(hms, list):
+        for index, item in enumerate(hms[:5]):
+            if isinstance(item, dict):
+                code = first_value(item, ("code", "full_code", "attr"), f"hms-{index}")
+                msg = first_value(item, ("msg", "message", "desc"), "HMS alert")
+                alerts.append(
+                    {
+                        "id": f"hms-{code}",
+                        "severity": "danger",
+                        "title": f"HMS {code}",
+                        "detail": str(msg),
+                        "source": "hms",
+                        "acknowledged": False,
+                    }
+                )
+
+    for (ams_id, slot_id), payload in sorted(slot_payloads.items()):
+        if payload.get("empty"):
+            continue
+        rem = payload.get("remaining_percent")
+        if rem is None:
+            continue
+        try:
+            rem_i = int(rem)
+        except (TypeError, ValueError):
+            continue
+        unit = chr(ord("A") + ams_id) if 0 <= ams_id < 26 else str(ams_id)
+        label = f"{unit}{slot_id + 1}"
+        material = payload.get("material") or payload.get("color_name") or "spool"
+        if rem_i <= SPOOL_CRITICAL_PERCENT:
+            alerts.append(
+                {
+                    "id": f"spool-critical-{ams_id}-{slot_id}",
+                    "severity": "danger",
+                    "title": f"{label} critically low",
+                    "detail": f"{material} at {rem_i}%",
+                    "source": "ams",
+                    "acknowledged": False,
+                }
+            )
+        elif rem_i <= SPOOL_LOW_PERCENT and payload.get("active"):
+            alerts.append(
+                {
+                    "id": f"spool-low-{ams_id}-{slot_id}",
+                    "severity": "warn",
+                    "title": f"{label} low",
+                    "detail": f"Active {material} at {rem_i}%",
+                    "source": "ams",
+                    "acknowledged": False,
+                }
+            )
+
+    # Deduplicate by id while preserving order.
+    seen: set[str] = set()
+    unique: list[dict[str, Any]] = []
+    for alert in alerts:
+        alert_id = str(alert.get("id"))
+        if alert_id in seen:
+            continue
+        seen.add(alert_id)
+        unique.append(alert)
+    return unique[:12]
+
+
+def build_ams_overview(
+    slot_payloads: dict[tuple[int, int], dict[str, Any]],
+    meta_payloads: dict[int, dict[str, Any]],
+) -> dict[str, Any]:
+    units: list[dict[str, Any]] = []
+    # Only units actually present this cycle (meta or slots), not a fixed range.
+    present_ids = sorted(set(meta_payloads.keys()) | {ams_id for (ams_id, _slot) in slot_payloads.keys()})
+    for ams_id in present_ids:
+        meta = meta_payloads.get(ams_id, {})
+        kind = meta.get("ams_kind") or expected_ams_kind(ams_id)
+        if kind == "ams_ht":
+            label = f"HT{ams_id - CONFIG.ams2pro_count + 1}"
+            slot_ids = [0]
+        else:
+            label = f"AMS {chr(ord('A') + ams_id)}"
+            slot_ids = list(range(4))
+        slots = []
+        for slot_id in slot_ids:
+            payload = slot_payloads.get((ams_id, slot_id), empty_slot_payload(ams_id, slot_id))
+            slots.append(
+                {
+                    "slot": slot_id,
+                    "empty": bool(payload.get("empty")),
+                    "active": bool(payload.get("active")),
+                    "color": payload.get("color") or "#202020",
+                    "material": payload.get("material") or "",
+                    "remaining_percent": payload.get("remaining_percent"),
+                }
+            )
+        # Skip empty HT placeholders with no climate and empty slot.
+        if kind == "ams_ht":
+            has_climate = meta.get("temperature") not in (None, "") or meta.get("humidity") not in (None, "")
+            has_filament = any(not s.get("empty") for s in slots)
+            if not has_climate and not has_filament:
+                continue
+        units.append(
+            {
+                "ams_id": ams_id,
+                "ams_kind": kind,
+                "label": label,
+                "temperature": meta.get("temperature"),
+                "humidity": meta.get("humidity"),
+                "slots": slots,
+            }
+        )
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "updated_at": int(time.time()),
+        "units": units,
+    }
+
+
+def build_display_state(
+    printer_payload: dict[str, Any],
+    alerts: list[dict[str, Any]],
+    overview: dict[str, Any],
+    slot_payloads: dict[tuple[int, int], dict[str, Any]],
+    meta_payloads: dict[int, dict[str, Any]],
+    printer_id: str,
+) -> dict[str, Any]:
+    """Single snapshot for GET /display/h2c/state (panel can poll instead of MQTT flood)."""
+    slots = [slot_payloads[key] for key in sorted(slot_payloads.keys())]
+    metas = [meta_payloads[key] for key in sorted(meta_payloads.keys())]
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "bridge_version": BRIDGE_VERSION,
+        "updated_at": int(time.time()),
+        "printer_id": str(printer_id),
+        "bridge": {
+            "online": True,
+            "status": "online",
+            "version": BRIDGE_VERSION,
+            "schema_version": SCHEMA_VERSION,
+        },
+        "printer": printer_payload,
+        "alerts": alerts,
+        "overview": overview,
+        "slots": slots,
+        "ams_meta": metas,
+    }
+
+
+def store_display_state(state: dict[str, Any]) -> None:
+    with LATEST_DISPLAY_STATE_LOCK:
+        LATEST_DISPLAY_STATE.clear()
+        LATEST_DISPLAY_STATE.update(state)
+
+
+def get_display_state() -> dict[str, Any]:
+    with LATEST_DISPLAY_STATE_LOCK:
+        if not LATEST_DISPLAY_STATE:
+            return {
+                "schema_version": SCHEMA_VERSION,
+                "bridge_version": BRIDGE_VERSION,
+                "updated_at": 0,
+                "bridge": {"online": False, "status": "starting", "version": BRIDGE_VERSION},
+                "printer": {},
+                "alerts": [],
+                "overview": {"units": []},
+                "slots": [],
+                "ams_meta": [],
+            }
+        return dict(LATEST_DISPLAY_STATE)
+
+
+class DisplayHttpHandler(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+
+    def log_message(self, format: str, *args: Any) -> None:
+        LOGGER.debug("HTTP %s - %s", self.address_string(), format % args)
+
+    def _send_json(self, status: int, payload: dict[str, Any]) -> None:
+        body = json.dumps(payload, separators=(",", ":"), default=str).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self) -> None:  # noqa: N802
+        path = self.path.split("?", 1)[0]
+        if path in {"/display/h2c/state", "/display/h2c/stat", "/state", "/stat"}:
+            self._send_json(200, get_display_state())
+            return
+        if path in {"/health", "/"}:
+            state = get_display_state()
+            self._send_json(
+                200,
+                {
+                    "ok": True,
+                    "bridge_version": BRIDGE_VERSION,
+                    "updated_at": state.get("updated_at", 0),
+                    "state_path": "/display/h2c/state",
+                },
+            )
+            return
+        self._send_json(404, {"ok": False, "error": "not_found", "path": path})
+
+
+def start_display_http_server() -> ThreadingHTTPServer | None:
+    if not CONFIG.display_http_enabled:
+        LOGGER.info("Display HTTP API disabled")
+        return None
+    server = ThreadingHTTPServer((CONFIG.display_http_host, CONFIG.display_http_port), DisplayHttpHandler)
+    thread = threading.Thread(target=server.serve_forever, name="display-http", daemon=True)
+    thread.start()
+    LOGGER.info(
+        "Display HTTP API on http://%s:%d/display/h2c/state",
+        CONFIG.display_http_host,
+        CONFIG.display_http_port,
+    )
+    return server
 
 
 def refresh_and_publish(bambuddy: BambuddyClient, mqtt_client: mqtt.Client, printer_id: str, force_refresh: bool = False) -> None:
@@ -833,23 +1339,151 @@ def refresh_and_publish(bambuddy: BambuddyClient, mqtt_client: mqtt.Client, prin
     with LATEST_STATUS_LOCK:
         merged_status = {**LATEST_STATUS, **rest_status}
 
+    # Resolve the display name/list of the printer we're actually polling.
+    printers: list[dict[str, Any]] = []
+    active_name = ""
+    try:
+        printers = bambuddy.printers_summary(printer_id)
+        active_name = next((p["name"] for p in printers if p["id"] == str(printer_id)), "")
+    except requests.HTTPError as exc:
+        LOGGER.warning("Could not list printers: %s", exc)
+
     spools = bambuddy.list_spools()
     assignments = bambuddy.list_assignments(printer_id)
     slot_payloads, meta_payloads = build_slot_payloads(merged_status, spools, assignments)
     next_job = bambuddy.next_queue_job(printer_id)
     archive_filament = bambuddy.archive_filament_grams(merged_status.get("current_archive_id"))
+    queue_depth = bambuddy.queue_depth(printer_id)
+    alerts = build_alerts(merged_status, slot_payloads)
+    overview = build_ams_overview(slot_payloads, meta_payloads)
+
+    printer_payload = build_printer_payload(
+        merged_status,
+        slot_payloads,
+        next_job,
+        archive_filament,
+        queue_depth=queue_depth,
+        alert_count=len(alerts),
+        printer_name=active_name,
+    )
+    store_display_state(
+        build_display_state(
+            printer_payload,
+            alerts,
+            overview,
+            slot_payloads,
+            meta_payloads,
+            printer_id,
+        )
+    )
+    publish_json(mqtt_client, printer_topic(), printer_payload)
+    publish_json(
+        mqtt_client,
+        alerts_topic(),
+        {"schema_version": SCHEMA_VERSION, "updated_at": int(time.time()), "alerts": alerts},
+    )
+    publish_json(mqtt_client, overview_topic(), overview)
+    published_slots = 0
+    published_meta = 0
+    for (ams_id, slot_id), payload in sorted(slot_payloads.items()):
+        if publish_json(mqtt_client, slot_topic(ams_id, slot_id), payload):
+            published_slots += 1
+    for ams_id, payload in sorted(meta_payloads.items()):
+        if publish_json(mqtt_client, ams_meta_topic(ams_id), payload):
+            published_meta += 1
+
+    # Clear retained topics for AMS units/slots that are no longer present, so the
+    # panel drops their nav buttons instead of showing stale placeholders.
+    global PUBLISHED_AMS_TOPICS
+    current_ams_topics = {slot_topic(a, s) for (a, s) in slot_payloads} | {
+        ams_meta_topic(a) for a in meta_payloads
+    }
+    for stale_topic in PUBLISHED_AMS_TOPICS - current_ams_topics:
+        clear_retained(mqtt_client, stale_topic)
+    PUBLISHED_AMS_TOPICS = current_ams_topics
+
+    # Selectable-printer list for the on-device picker (fetched up top).
+    if printers:
+        publish_json(
+            mqtt_client,
+            printers_topic(),
+            {
+                "schema_version": SCHEMA_VERSION,
+                "updated_at": int(time.time()),
+                "active_id": str(printer_id),
+                "printers": printers,
+            },
+        )
 
     publish_json(
         mqtt_client,
-        printer_topic(),
-        build_printer_payload(merged_status, slot_payloads, next_job, archive_filament),
+        bridge_status_topic(),
+        {
+            "online": True,
+            "status": "online",
+            "version": BRIDGE_VERSION,
+            "schema_version": SCHEMA_VERSION,
+            "updated_at": int(time.time()),
+            "printer_id": str(printer_id),
+        },
+        force=True,
     )
-    for (ams_id, slot_id), payload in sorted(slot_payloads.items()):
-        publish_json(mqtt_client, slot_topic(ams_id, slot_id), payload)
-    for ams_id, payload in sorted(meta_payloads.items()):
-        publish_json(mqtt_client, ams_meta_topic(ams_id), payload)
 
-    LOGGER.info("Published %d slot payloads and %d AMS meta payloads", len(slot_payloads), len(meta_payloads))
+    LOGGER.info(
+        "Published printer/alerts/overview; slots %d/%d changed, meta %d/%d changed",
+        published_slots,
+        len(slot_payloads),
+        published_meta,
+        len(meta_payloads),
+    )
+
+
+def publish_command_response(client: mqtt.Client, request_id: str, action: str, ok: bool, message: str) -> None:
+    publish_json(
+        client,
+        command_response_topic(),
+        {
+            "id": request_id,
+            "action": action,
+            "ok": ok,
+            "message": message,
+            "updated_at": int(time.time()),
+        },
+        retain=False,
+    )
+
+
+def handle_command_request(bambuddy: BambuddyClient, client: mqtt.Client, payload: dict[str, Any]) -> None:
+    global ACTIVE_PRINTER_ID
+    request_id = str(payload.get("id") or f"cmd-{int(time.time())}")
+    action = str(payload.get("action") or "")
+    arg = payload.get("arg")
+    arg_text = None if arg is None else str(arg)
+    if not ACTIVE_PRINTER_ID:
+        publish_command_response(client, request_id, action, False, "Printer id not ready")
+        return
+    ok, message = bambuddy.send_printer_command(ACTIVE_PRINTER_ID, action, arg_text)
+    publish_command_response(client, request_id, action, ok, message)
+    if ok:
+        REFRESH_EVENT.set()
+
+
+def handle_printer_switch(client: mqtt.Client, new_id: str) -> None:
+    """Device selected a different printer to monitor: switch, persist, re-poll."""
+    global ACTIVE_PRINTER_ID, PUBLISHED_AMS_TOPICS
+    with ACTIVE_PRINTER_LOCK:
+        if new_id == ACTIVE_PRINTER_ID:
+            return
+        LOGGER.info("Switching monitored printer %s -> %s", ACTIVE_PRINTER_ID, new_id)
+        ACTIVE_PRINTER_ID = new_id
+    save_selected_printer_id(new_id)
+    # Drop stale state from the previous printer so it can't bleed into the merge.
+    with LATEST_STATUS_LOCK:
+        LATEST_STATUS.clear()
+    for stale_topic in list(PUBLISHED_AMS_TOPICS):
+        clear_retained(client, stale_topic)
+    PUBLISHED_AMS_TOPICS = set()
+    REFRESH_EVENT.set()
 
 
 def on_connect(client: mqtt.Client, _userdata: Any, _flags: Any, reason_code: Any, _properties: Any = None) -> None:
@@ -857,11 +1491,23 @@ def on_connect(client: mqtt.Client, _userdata: Any, _flags: Any, reason_code: An
     serial_filter = CONFIG.h2c_serial if CONFIG.h2c_serial else "+"
     client.subscribe(f"{CONFIG.bambuddy_topic_prefix}/printers/{serial_filter}/status")
     client.subscribe(f"{CONFIG.bambuddy_topic_prefix}/printers/{serial_filter}/ams/changed")
-    client.publish(f"{CONFIG.display_topic_prefix}/bridge/status", "online", retain=True)
+    client.subscribe(command_request_topic())
+    client.subscribe(printer_ctrl_topic())
+    publish_json(
+        client,
+        bridge_status_topic(),
+        {
+            "online": True,
+            "status": "online",
+            "version": BRIDGE_VERSION,
+            "schema_version": SCHEMA_VERSION,
+            "updated_at": int(time.time()),
+        },
+    )
     REFRESH_EVENT.set()
 
 
-def on_message(_client: mqtt.Client, _userdata: Any, message: mqtt.MQTTMessage) -> None:
+def on_message(client: mqtt.Client, userdata: Any, message: mqtt.MQTTMessage) -> None:
     topic = message.topic
     LOGGER.debug("Received %s", topic)
     try:
@@ -869,19 +1515,39 @@ def on_message(_client: mqtt.Client, _userdata: Any, message: mqtt.MQTTMessage) 
     except json.JSONDecodeError:
         payload = {}
 
-    if topic.endswith("/status") and isinstance(payload, dict):
+    if topic == command_request_topic() and isinstance(payload, dict):
+        bambuddy = userdata.get("bambuddy") if isinstance(userdata, dict) else None
+        if isinstance(bambuddy, BambuddyClient):
+            handle_command_request(bambuddy, client, payload)
+        return
+
+    if topic == printer_ctrl_topic():
+        new_id = ""
+        if isinstance(payload, dict):
+            new_id = str(first_value(payload, ("id", "printer_id"), ""))
+        elif isinstance(payload, (str, int)):
+            new_id = str(payload)
+        if new_id:
+            handle_printer_switch(client, new_id)
+        return
+
+    if topic.endswith("/status") and isinstance(payload, dict) and "/command/" not in topic:
         with LATEST_STATUS_LOCK:
             LATEST_STATUS.update(payload)
-        # Status arrives ~1/sec; the poll loop picks it up. Only AMS changes force an immediate refresh.
         return
     REFRESH_EVENT.set()
 
 
-def build_mqtt_client() -> mqtt.Client:
+def build_mqtt_client(bambuddy: BambuddyClient) -> mqtt.Client:
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=CONFIG.mqtt_client_id)
+    client.user_data_set({"bambuddy": bambuddy})
     client.on_connect = on_connect
     client.on_message = on_message
-    client.will_set(f"{CONFIG.display_topic_prefix}/bridge/status", "offline", retain=True)
+    offline = json.dumps(
+        {"online": False, "status": "offline", "version": BRIDGE_VERSION, "schema_version": SCHEMA_VERSION},
+        separators=(",", ":"),
+    )
+    client.will_set(bridge_status_topic(), offline, retain=True)
     if CONFIG.mqtt_username:
         client.username_pw_set(CONFIG.mqtt_username, CONFIG.mqtt_password)
     if CONFIG.mqtt_tls:
@@ -891,10 +1557,20 @@ def build_mqtt_client() -> mqtt.Client:
 
 
 def main() -> None:
+    global ACTIVE_PRINTER_ID
     bambuddy = BambuddyClient(CONFIG)
-    mqtt_client = build_mqtt_client()
-    printer_id = bambuddy.resolve_printer_id()
-    LOGGER.info("Monitoring Bambuddy printer id %s", printer_id)
+    mqtt_client = build_mqtt_client(bambuddy)
+    # Device-selected printer (persisted) wins over env/auto-resolve.
+    selected = load_selected_printer_id()
+    printer_id = selected or bambuddy.resolve_printer_id()
+    ACTIVE_PRINTER_ID = str(printer_id)
+    LOGGER.info(
+        "Monitoring Bambuddy printer id %s%s (bridge %s schema %s)",
+        printer_id,
+        " (device-selected)" if selected else "",
+        BRIDGE_VERSION,
+        SCHEMA_VERSION,
+    )
 
     def handle_signal(_signum: int, _frame: Any) -> None:
         STOP_EVENT.set()
@@ -905,6 +1581,7 @@ def main() -> None:
 
     mqtt_client.connect(CONFIG.mqtt_host, CONFIG.mqtt_port, keepalive=60)
     mqtt_client.loop_start()
+    http_server = start_display_http_server()
 
     try:
         next_poll = 0.0
@@ -915,10 +1592,24 @@ def main() -> None:
             REFRESH_EVENT.clear()
 
             if should_poll or should_refresh:
-                refresh_and_publish(bambuddy, mqtt_client, printer_id, force_refresh=should_refresh)
+                with ACTIVE_PRINTER_LOCK:
+                    active_id = ACTIVE_PRINTER_ID
+                refresh_and_publish(bambuddy, mqtt_client, active_id, force_refresh=should_refresh)
                 next_poll = time.monotonic() + CONFIG.poll_seconds
     finally:
-        mqtt_client.publish(f"{CONFIG.display_topic_prefix}/bridge/status", "offline", retain=True)
+        if http_server is not None:
+            http_server.shutdown()
+        publish_json(
+            mqtt_client,
+            bridge_status_topic(),
+            {
+                "online": False,
+                "status": "offline",
+                "version": BRIDGE_VERSION,
+                "schema_version": SCHEMA_VERSION,
+                "updated_at": int(time.time()),
+            },
+        )
         mqtt_client.loop_stop()
         mqtt_client.disconnect()
 
