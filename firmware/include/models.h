@@ -42,7 +42,7 @@ struct SlotState {
   String colorName;
   String manufacturer;
   String material;
-  String profileBaseName;  // FilaMan bambu_profile_base_name
+  String profileBaseName;  // FilaMan profile_base_name / bambu_profile_base_name
   String nozzleMin;
   String nozzleMax;
   String remainingGrams;

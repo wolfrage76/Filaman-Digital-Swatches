@@ -436,7 +436,15 @@ bool applySnapshot(JsonDocument &doc) {
       slot.colorName = jsonString(s["color_name"]);
       slot.manufacturer = jsonString(s["manufacturer"]);
       slot.material = material;
-      slot.profileBaseName = jsonString(s["bambu_profile_base_name"]);
+      // Display API: profile_base_name (and optionally bambu_profile_base_name).
+      // Fall back to filament designation on older feeds.
+      slot.profileBaseName = jsonString(s["profile_base_name"]);
+      if (!slot.profileBaseName.length()) {
+        slot.profileBaseName = jsonString(s["bambu_profile_base_name"]);
+      }
+      if (!slot.profileBaseName.length()) {
+        slot.profileBaseName = jsonString(s["filament"]);
+      }
       slot.nozzleMin = intStr(s["nozzle_min"]);
       slot.nozzleMax = intStr(s["nozzle_max"]);
       slot.remainingPercent = remainingPercent;

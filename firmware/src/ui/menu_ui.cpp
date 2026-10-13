@@ -199,8 +199,10 @@ lv_obj_t *makeMenuRow(lv_obj_t *parent, lv_coord_t height) {
   return row;
 }
 
-// Home-menu destination tile: icon + label, equal-width in a flex row.
-lv_obj_t *makeMenuTile(lv_obj_t *parent, const char *symbol, const char *label, bool emphasize,
+// Home-menu destination tile: monogram + label. Use ASCII letters only for the
+// mark — many LV_SYMBOL_* glyphs are missing from Montserrat and render as
+// empty boxes on device.
+lv_obj_t *makeMenuTile(lv_obj_t *parent, const char *mark, const char *label, bool emphasize,
                        bool badge, lv_event_cb_t cb, void *ud) {
   lv_obj_t *btn = lv_btn_create(parent);
   lv_obj_set_flex_grow(btn, 1);
@@ -231,10 +233,18 @@ lv_obj_t *makeMenuTile(lv_obj_t *parent, const char *symbol, const char *label, 
     lv_obj_align(dot, LV_ALIGN_TOP_RIGHT, -6, 6);
   }
 
-  lv_obj_t *icon = lv_label_create(btn);
-  lv_obj_set_style_text_font(icon, &lv_font_montserrat_22, 0);
-  lv_obj_set_style_text_color(icon, lv_color_hex(COL_ACCENT), 0);
-  lv_label_set_text(icon, symbol);
+  lv_obj_t *chip = lv_obj_create(btn);
+  lv_obj_remove_style_all(chip);
+  lv_obj_set_size(chip, 36, 36);
+  lv_obj_set_style_radius(chip, 10, 0);
+  lv_obj_set_style_bg_color(chip, lv_color_hex(emphasize ? COL_ACCENT : 0x243040), 0);
+  lv_obj_set_style_bg_opa(chip, LV_OPA_COVER, 0);
+  lv_obj_clear_flag(chip, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_t *icon = lv_label_create(chip);
+  lv_obj_set_style_text_font(icon, &lv_font_montserrat_18, 0);
+  lv_obj_set_style_text_color(icon, lv_color_hex(emphasize ? COL_BG : COL_ACCENT), 0);
+  lv_label_set_text(icon, mark);
+  lv_obj_center(icon);
 
   lv_obj_t *lbl = lv_label_create(btn);
   lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, 0);
@@ -509,12 +519,14 @@ void showHome() {
   confirmResetArmed = false;
   clearContent();
   lv_label_set_text(titleLabel, "Menu");
-  // Compact one-line status in the header row. Full URL lives in System.
+  // Compact one-line status in the header row. ASCII separators only —
+  // Montserrat does not include middot/other punctuation (empty boxes).
+  // Hostname/.local is omitted: many LANs do not resolve mDNS.
   String sub = String("v") + FIRMWARE_VERSION;
   if (WiFi.status() == WL_CONNECTED) {
-    sub += "  ·  " + WiFi.localIP().toString() + "  ·  " + config().otaHostname + ".local";
+    sub += "  |  " + WiFi.localIP().toString();
   } else {
-    sub += "  ·  WiFi offline";
+    sub += "  |  WiFi offline";
   }
   setStatus(sub, COL_MUTED);
 
@@ -530,11 +542,11 @@ void showHome() {
 
   addSection(col, "SCREENS");
   lv_obj_t *screens = makeMenuRow(col, 86);
-  makeMenuTile(screens, LV_SYMBOL_PLAY, "Printer", true, false, onScreen,
+  makeMenuTile(screens, "P", "Printer", true, false, onScreen,
                reinterpret_cast<void *>(static_cast<intptr_t>(STATUS_PAGE)));
-  makeMenuTile(screens, LV_SYMBOL_DIRECTORY, "AMS View", true, false, onScreen,
+  makeMenuTile(screens, "A", "AMS View", true, false, onScreen,
                reinterpret_cast<void *>(static_cast<intptr_t>(AMS_OVERVIEW_PAGE)));
-  makeMenuTile(screens, LV_SYMBOL_WARNING, "Alerts", true, false, onScreen,
+  makeMenuTile(screens, "!", "Alerts", true, false, onScreen,
                reinterpret_cast<void *>(static_cast<intptr_t>(ALERTS_PAGE)));
 
   addSection(col, "CONFIGURATION");
@@ -548,22 +560,17 @@ void showHome() {
   lv_obj_clear_flag(cfg, LV_OBJ_FLAG_SCROLLABLE);
 
   lv_obj_t *row1 = makeMenuRow(cfg, 0);
-  makeMenuTile(row1, LV_SYMBOL_LIST, "Printer", false, false, onPrinter, nullptr);
-  makeMenuTile(row1, LV_SYMBOL_WIFI, "WiFi", false, false, onWifi, nullptr);
-  makeMenuTile(row1, LV_SYMBOL_GPS, "FilaMan", false, false, [](lv_event_t *) { showFilaman(); },
-               nullptr);
-  makeMenuTile(row1, LV_SYMBOL_SHUFFLE, "MQTT", false, false, [](lv_event_t *) { showMqtt(); },
-               nullptr);
+  makeMenuTile(row1, "Pr", "Printer", false, false, onPrinter, nullptr);
+  makeMenuTile(row1, "Wi", "WiFi", false, false, onWifi, nullptr);
+  makeMenuTile(row1, "Fi", "FilaMan", false, false, [](lv_event_t *) { showFilaman(); }, nullptr);
+  makeMenuTile(row1, "Mq", "MQTT", false, false, [](lv_event_t *) { showMqtt(); }, nullptr);
 
   lv_obj_t *row2 = makeMenuRow(cfg, 0);
-  makeMenuTile(row2, LV_SYMBOL_EYE_OPEN, "Display", false, false, [](lv_event_t *) { showDisplay(); },
+  makeMenuTile(row2, "Di", "Display", false, false, [](lv_event_t *) { showDisplay(); }, nullptr);
+  makeMenuTile(row2, "De", "Device", false, false, [](lv_event_t *) { showDevice(); }, nullptr);
+  makeMenuTile(row2, "Up", "Update", false, updateBadgeVisible(), [](lv_event_t *) { showUpdate(); },
                nullptr);
-  makeMenuTile(row2, LV_SYMBOL_SETTINGS, "Device", false, false, [](lv_event_t *) { showDevice(); },
-               nullptr);
-  makeMenuTile(row2, LV_SYMBOL_DOWNLOAD, "Update", false, updateBadgeVisible(),
-               [](lv_event_t *) { showUpdate(); }, nullptr);
-  makeMenuTile(row2, LV_SYMBOL_FILE, "System", false, false, [](lv_event_t *) { showSystem(); },
-               nullptr);
+  makeMenuTile(row2, "Sy", "System", false, false, [](lv_event_t *) { showSystem(); }, nullptr);
 }
 
 void showFilaman() {
@@ -1049,7 +1056,7 @@ void showUpdate() {
   const bool autoOn = config().autoCheckUpdates;
 
   if (!hasLatest) {
-    setStatus(autoOn ? "Automatic checks enabled — waiting for the next GitHub poll."
+    setStatus(autoOn ? "Automatic checks enabled - waiting for the next GitHub poll."
                      : "Check GitHub for the latest firmware release (keeps all saved settings).",
               COL_MUTED);
   } else if (newerAvailable) {
