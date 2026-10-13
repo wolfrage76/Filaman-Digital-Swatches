@@ -436,6 +436,7 @@ bool applySnapshot(JsonDocument &doc) {
       slot.colorName = jsonString(s["color_name"]);
       slot.manufacturer = jsonString(s["manufacturer"]);
       slot.material = material;
+      slot.profileBaseName = jsonString(s["bambu_profile_base_name"]);
       slot.nozzleMin = intStr(s["nozzle_min"]);
       slot.nozzleMax = intStr(s["nozzle_max"]);
       slot.remainingPercent = remainingPercent;

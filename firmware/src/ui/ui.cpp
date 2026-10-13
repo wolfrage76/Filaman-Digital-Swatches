@@ -53,6 +53,7 @@ struct ColumnWidgets {
   lv_obj_t *colorName = nullptr;
   lv_obj_t *manufacturer = nullptr;
   lv_obj_t *material = nullptr;
+  lv_obj_t *profileName = nullptr;
   lv_obj_t *temps = nullptr;
   lv_obj_t *remainingBar = nullptr;
   lv_obj_t *remaining = nullptr;
@@ -1444,6 +1445,11 @@ void refreshColumn(int column) {
   setLabelIfChanged(widgets.colorName, colorName);
   setLabelIfChanged(widgets.manufacturer, slot.empty ? String("--") : dashOr(slot.manufacturer));
   setLabelIfChanged(widgets.material, slot.empty ? String("--") : dashOr(slot.material));
+  const bool showProfile = !slot.empty && slot.profileBaseName.length() > 0;
+  setHiddenIfChanged(widgets.profileName, !showProfile);
+  if (showProfile) {
+    setLabelIfChanged(widgets.profileName, slot.profileBaseName);
+  }
 
   String temps;
   if (!slot.empty && (slot.nozzleMin.length() || slot.nozzleMax.length())) {
@@ -2226,6 +2232,10 @@ void buildColumn(lv_obj_t *parent, int index) {
   lv_obj_set_style_max_height(widgets.colorName, 44, 0);
   widgets.manufacturer = makeLabel(body, &lv_font_montserrat_12, lv_color_hex(COL_MUTED));
   widgets.material = makeLabel(body, &lv_font_montserrat_22, lv_color_hex(COL_TEXT));
+  widgets.profileName = makeLabel(body, &lv_font_montserrat_12, lv_color_hex(COL_MUTED));
+  lv_label_set_long_mode(widgets.profileName, LV_LABEL_LONG_DOT);
+  lv_obj_set_width(widgets.profileName, lv_pct(100));
+  lv_obj_add_flag(widgets.profileName, LV_OBJ_FLAG_HIDDEN);
   widgets.temps = makeLabel(body, &lv_font_montserrat_12, lv_color_hex(COL_MUTED));
 
   widgets.remainingBar = lv_bar_create(body);
@@ -2245,6 +2255,7 @@ void buildColumn(lv_obj_t *parent, int index) {
   lv_obj_set_style_text_align(widgets.colorName, LV_TEXT_ALIGN_CENTER, 0);
   lv_obj_set_style_text_align(widgets.manufacturer, LV_TEXT_ALIGN_CENTER, 0);
   lv_obj_set_style_text_align(widgets.material, LV_TEXT_ALIGN_CENTER, 0);
+  lv_obj_set_style_text_align(widgets.profileName, LV_TEXT_ALIGN_CENTER, 0);
   lv_obj_set_style_text_align(widgets.temps, LV_TEXT_ALIGN_CENTER, 0);
   lv_obj_set_style_text_align(widgets.remaining, LV_TEXT_ALIGN_CENTER, 0);
   lv_obj_set_style_text_align(widgets.cost, LV_TEXT_ALIGN_CENTER, 0);

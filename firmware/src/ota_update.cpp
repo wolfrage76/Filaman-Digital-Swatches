@@ -24,9 +24,11 @@ unsigned long lastAutoCheckMs = 0;
 unsigned long wifiConnectedSinceMs = 0;
 bool sawWifiConnected = false;
 
-// First poll shortly after WiFi is up; then every 12 hours.
+// First poll shortly after WiFi is up; then hourly. Manifest hits GitHub Pages
+// (no API quota); the Releases API fallback is 1 req/hr, well under the
+// unauthenticated 60/hr GitHub limit even with a few panels on one IP.
 constexpr unsigned long kAutoCheckFirstDelayMs = 90UL * 1000UL;
-constexpr unsigned long kAutoCheckIntervalMs = 12UL * 60UL * 60UL * 1000UL;
+constexpr unsigned long kAutoCheckIntervalMs = 60UL * 60UL * 1000UL;
 
 constexpr const char *kManifestUrl =
     "https://wolfrage76.github.io/Filaman-Digital-Swatches/manifest-update.json";

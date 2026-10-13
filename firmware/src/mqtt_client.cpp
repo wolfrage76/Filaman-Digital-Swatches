@@ -525,6 +525,10 @@ void DisplayMqtt::handleMessage(char *topicChars, byte *payload, unsigned int le
     slot.colorName = jsonString(doc["color_name"]);
     slot.manufacturer = jsonString(doc["manufacturer"]);
     slot.material = jsonString(doc["material"]);
+    slot.profileBaseName = jsonString(doc["bambu_profile_base_name"]);
+    if (!slot.profileBaseName.length()) {
+      slot.profileBaseName = jsonString(doc["profile_base_name"]);
+    }
     slot.nozzleMin = jsonString(doc["nozzle_min"]);
     slot.nozzleMax = jsonString(doc["nozzle_max"]);
     slot.remainingPercent = jsonInt(doc["remaining_percent"], -1);
