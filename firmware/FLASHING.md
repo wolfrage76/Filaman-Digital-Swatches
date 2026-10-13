@@ -9,10 +9,13 @@ No command line. Use **Chrome** or **Edge**, a USB data cable, and a CH340 drive
 **https://wolfrage76.github.io/Filaman-Digital-Swatches/**
 
 1. Connect the CrowPanel.
-2. Click **Install** and select the serial port.
-3. When it finishes, configure WiFi and FilaMan on the panel or at `http://crowpanel.local/`.
+2. Choose an install mode:
+   - **Keep Settings & Update** — flashes the app only; keeps Wi‑Fi, FilaMan, and other NVS settings.
+   - **Factory Reset & Install** — full image + erase; wipes saved settings (use for first-time flash).
+3. Select the serial port and wait for the flash to finish.
+4. After a factory reset (or first boot), configure WiFi and FilaMan on the panel or at `http://crowpanel.local/`.
 
-Later updates: same page over USB, or `http://crowpanel.local/update` once the panel is on WiFi.
+Later updates: **Keep Settings** on the same page, or `http://crowpanel.local/update` once the panel is on WiFi.
 
 ---
 

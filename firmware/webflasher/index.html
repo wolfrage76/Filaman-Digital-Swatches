@@ -3,29 +3,39 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Filaman Digital Swatches — USB Flasher</title>
+  <title>Filaman Digital Swatches — USB Flasher (local)</title>
   <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js"></script>
   <style>
-    body { font-family: system-ui, sans-serif; max-width: 600px; margin: 2em auto; padding: 0 1em;
+    body { font-family: system-ui, sans-serif; max-width: 640px; margin: 2em auto; padding: 0 1em;
            background: #0a0e14; color: #f2f5f8; }
     h1 { color: #3ddc97; }
-    a { color: #5aa7ff; }
-    esp-web-install-button { --esp-tools-button-color: #3ddc97; --esp-tools-button-text-color: #0a0e14; }
+    .row { display: grid; gap: 1rem; margin: 1.25rem 0; }
+    @media (min-width: 560px) { .row { grid-template-columns: 1fr 1fr; } }
+    .card { border: 1px solid #2a3544; border-radius: 10px; padding: 1rem; }
+    button { width: 100%; padding: .7rem 1rem; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; }
+    .keep button { background: #3ddc97; color: #0a0e14; }
+    .reset button { background: #e85d5d; color: #fff; }
     .note { color: #8b98a8; font-size: .9em; }
   </style>
 </head>
 <body>
   <h1>Filaman Digital Swatches — USB Flasher</h1>
-  <p>Flash the CrowPanel display firmware over USB from your browser (Chrome / Edge).</p>
-  <ol>
-    <li>Connect the CrowPanel with a USB data cable.</li>
-    <li>Click <b>Install</b> and pick the CH340 serial port.</li>
-  </ol>
-  <esp-web-install-button manifest="manifest.json"></esp-web-install-button>
-  <p class="note">
-    Local copy of the flasher used while developing. The published page lives under
-    <code>docs/</code> on GitHub Pages. After WiFi setup, use
-    <code>http://crowpanel.local/update</code> for LAN updates.
-  </p>
+  <p class="note">Local copy. Published page: <code>docs/</code> on GitHub Pages.</p>
+  <div class="row">
+    <div class="card keep">
+      <h3>Keep Settings</h3>
+      <p class="note">App-only update. Preserves Wi‑Fi / FilaMan NVS.</p>
+      <esp-web-install-button manifest="manifest-update.json">
+        <button slot="activate" type="button">Keep Settings &amp; Update</button>
+      </esp-web-install-button>
+    </div>
+    <div class="card reset">
+      <h3>Factory Reset</h3>
+      <p class="note">Full image + erase. Wipes saved settings.</p>
+      <esp-web-install-button manifest="manifest-factory.json">
+        <button slot="activate" type="button">Factory Reset &amp; Install</button>
+      </esp-web-install-button>
+    </div>
+  </div>
 </body>
 </html>

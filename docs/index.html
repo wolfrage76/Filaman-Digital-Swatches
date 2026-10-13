@@ -12,6 +12,8 @@
       --text: #f2f5f8;
       --muted: #8b98a8;
       --accent: #3ddc97;
+      --warn: #f0a030;
+      --danger: #e85d5d;
       --link: #5aa7ff;
       --border: #2a3544;
     }
@@ -47,18 +49,53 @@
     }
     ol { margin: 0; padding-left: 1.25rem; }
     li { margin: .45rem 0; }
-    .install {
-      display: flex;
-      flex-direction: column;
-      align-items: flex-start;
-      gap: .75rem;
+    .choices {
+      display: grid;
+      gap: 1rem;
       margin: 1.25rem 0 .5rem;
     }
-    esp-web-install-button {
-      --esp-tools-button-color: var(--accent);
-      --esp-tools-button-text-color: var(--bg);
-      --esp-tools-button-border-radius: 8px;
+    @media (min-width: 560px) {
+      .choices { grid-template-columns: 1fr 1fr; }
     }
+    .choice {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: .65rem;
+      min-height: 100%;
+    }
+    .choice h2 {
+      margin: 0;
+      font-size: 1.05rem;
+    }
+    .choice p {
+      margin: 0;
+      color: var(--muted);
+      font-size: .9rem;
+      flex: 1;
+    }
+    .choice.keep { border-color: #2a5a44; }
+    .choice.reset { border-color: #5a3a3a; }
+    .choice button {
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      padding: 10px 16px;
+      border: none;
+      border-radius: 8px;
+      width: 100%;
+    }
+    .choice.keep button {
+      background: var(--accent);
+      color: var(--bg);
+    }
+    .choice.reset button {
+      background: var(--danger);
+      color: #fff;
+    }
+    .choice button:hover { filter: brightness(1.08); }
     .note { color: var(--muted); font-size: .9rem; margin: .75rem 0 0; }
     a { color: var(--link); }
     code {
@@ -86,8 +123,8 @@
   <main>
     <h1>Filaman Digital Swatches</h1>
     <p class="lead">
-      First-time USB flash for the Elecrow CrowPanel 7″ (ESP32-S3) FilaMan AMS
-      dashboard. Install firmware from this page — no PlatformIO required.
+      USB flash for the Elecrow CrowPanel 7″ (ESP32-S3). Choose whether to keep
+      Wi‑Fi / FilaMan settings or wipe the device clean.
     </p>
 
     <div class="meta">
@@ -98,29 +135,53 @@
 
     <div class="card">
       <ol>
-        <li>Install the <b>CH340</b> USB-serial driver if your OS does not already have it.</li>
-        <li>Connect the CrowPanel to this computer with a USB data cable.</li>
-        <li>Click <b>Connect</b> / <b>Install</b> below and select the CrowPanel serial port.</li>
+        <li>Install the <b>CH340</b> USB-serial driver if your OS needs it.</li>
+        <li>Connect the CrowPanel with a USB <b>data</b> cable.</li>
+        <li>Pick an option below and select the CrowPanel serial port.</li>
         <li>Wait for the flash to finish, then power-cycle or reset the panel.</li>
       </ol>
 
-      <div class="install">
-        <esp-web-install-button manifest="./manifest.json"></esp-web-install-button>
+      <div class="choices">
+        <div class="choice keep">
+          <h2>Keep Settings</h2>
+          <p>
+            Updates the firmware only. Keeps Wi‑Fi, FilaMan URL/key, printer
+            choice, and OTA password already saved on the panel.
+            Use this for normal upgrades.
+          </p>
+          <esp-web-install-button manifest="./manifest-update.json">
+            <button slot="activate" type="button">Keep Settings &amp; Update</button>
+          </esp-web-install-button>
+        </div>
+
+        <div class="choice reset">
+          <h2>Factory Reset</h2>
+          <p>
+            Full install and erase. Wipes all saved settings and loads a clean
+            image. Use for first-time flash, or when the panel will not boot /
+            the partition layout changed.
+          </p>
+          <esp-web-install-button manifest="./manifest-factory.json">
+            <button slot="activate" type="button">Factory Reset &amp; Install</button>
+          </esp-web-install-button>
+        </div>
       </div>
 
       <p class="note">
         Needs <b>Chrome or Edge</b> (Web Serial) and this page over <b>HTTPS</b>
         (or <code>http://localhost</code>). Safari and Firefox are not supported.
+        If Keep Settings fails after a major release, use Factory Reset once, then
+        re-enter Wi‑Fi and FilaMan.
       </p>
     </div>
 
     <div class="card">
       <p style="margin:0 0 .6rem"><b>After flashing</b></p>
       <p class="note" style="margin:0">
-        Join WiFi from the on-device setup, then open
-        <code>http://crowpanel.local/</code> (or the panel’s IP) to set the FilaMan URL and API key.
-        Later updates can use that config page’s <code>/update</code> endpoint or LAN OTA —
-        see the project README.
+        If you factory-reset (or this is a new panel), join Wi‑Fi on the device,
+        then open <code>http://crowpanel.local/</code> to set the FilaMan URL and
+        API key. With Keep Settings, the panel should come back on the same Wi‑Fi
+        and config.
       </p>
     </div>
   </main>
