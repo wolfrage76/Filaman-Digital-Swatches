@@ -10,7 +10,7 @@ Default mDNS / OTA hostname: **`crowpanel`** → `http://crowpanel.local/`.
 
 Published flasher (Chrome / Edge):
 
-**https://wolfrage76.github.io/7in-Display-ESP32/**
+**https://wolfrage76.github.io/Filaman-Digital-Swatches/**
 
 1. Install a CH340 driver if needed.
 2. Connect the CrowPanel with a USB data cable.

@@ -1,8 +1,8 @@
-# CrowPanel AMS monitor
+# Filaman Digital Swatches
 
-CrowPanel 7″ ESP32-S3 dashboard for Bambu Lab printers. Live job status, AMS / AMS-HT slots, climate, and alerts come from **FilaMan’s Display API**. MQTT is only a fallback.
+CrowPanel 7″ ESP32-S3 dashboard for Bambu Lab printers. Live job status, AMS / AMS-HT slots (digital swatches), climate, and alerts come from **FilaMan’s Display API**. MQTT is only a fallback.
 
-**Firmware:** `0.20.13` · **Repo:** [wolfrage76/7in-Display-ESP32](https://github.com/wolfrage76/7in-Display-ESP32)
+**Firmware:** `0.20.13` · **Repo:** [wolfrage76/Filaman-Digital-Swatches](https://github.com/wolfrage76/Filaman-Digital-Swatches)
 
 ```text
 Printer → Bambuddy / FilaMan → GET /api/v1/display/printers/{id} → CrowPanel
@@ -20,7 +20,7 @@ Stock FilaMan is enough for the panel. Keep FilaMan’s normal Bambuddy (or othe
 
 Use the GitHub Pages flasher (Chrome or Edge, CH340 driver, USB data cable):
 
-**https://wolfrage76.github.io/7in-Display-ESP32/**
+**https://wolfrage76.github.io/Filaman-Digital-Swatches/**
 
 1. Connect the CrowPanel over USB.
 2. Click **Install** and pick the serial port.
