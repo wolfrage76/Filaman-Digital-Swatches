@@ -50,11 +50,21 @@ def app_sources():
         for f in files:
             if f.endswith(".cpp"):
                 out.append(os.path.join(root, f))
+    # HTTPUpdateServer is not compiled into the Arduino IDF component; WebServer is.
+    pkgs = env.subst("$PROJECT_PACKAGES_DIR")
+    matches = sorted(glob.glob(os.path.join(pkgs, "framework-arduinoespressif32-src-*")))
+    if matches:
+        lib_src = os.path.join(matches[0], "libraries", "HTTPUpdateServer", "src")
+        if os.path.isdir(lib_src):
+            for root, _dirs, files in os.walk(lib_src):
+                for f in files:
+                    if f.endswith(".cpp"):
+                        out.append(os.path.join(root, f))
     return sorted(out)
 
 
 def include_dirs():
-    return [
+    dirs = [
         ".",
         SRC,
         os.path.join(PROJECT_DIR, "include"),
@@ -65,6 +75,17 @@ def include_dirs():
         os.path.join(LIBDEPS, "ArduinoJson", "src"),
         os.path.join(LIBDEPS, "TAMC_GT911"),
     ]
+    # Arduino-as-component builds do not auto-add every bundled library the way
+    # PlatformIO LDF does. Web portal needs WebServer + HTTPUpdateServer.
+    pkgs = env.subst("$PROJECT_PACKAGES_DIR")
+    matches = sorted(glob.glob(os.path.join(pkgs, "framework-arduinoespressif32-src-*")))
+    if matches:
+        lib_root = os.path.join(matches[0], "libraries")
+        for name in ("WebServer", "HTTPUpdateServer", "HTTPUpdate", "Update", "WiFi", "Network"):
+            src = os.path.join(lib_root, name, "src")
+            if os.path.isdir(src):
+                dirs.append(src)
+    return dirs
 
 
 def write_hijack():
