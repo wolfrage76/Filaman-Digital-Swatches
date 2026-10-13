@@ -1,0 +1,31 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>CrowPanel H2C — USB Flasher</title>
+  <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js"></script>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 600px; margin: 2em auto; padding: 0 1em;
+           background: #0a0e14; color: #f2f5f8; }
+    h1 { color: #3ddc97; }
+    a { color: #5aa7ff; }
+    esp-web-install-button { --esp-tools-button-color: #0a0e14; --esp-tools-button-text-color: #3ddc97; }
+    .note { color: #8b98a8; font-size: .9em; }
+  </style>
+</head>
+<body>
+  <h1>CrowPanel H2C — USB Flasher</h1>
+  <p>Flash the display firmware over the USB cable, straight from your browser.</p>
+  <ol>
+    <li>Connect the CrowPanel to this computer with a USB cable.</li>
+    <li>Click <b>Install</b> below and pick the CH340 serial port.</li>
+  </ol>
+  <esp-web-install-button manifest="manifest.json"></esp-web-install-button>
+  <p class="note">
+    Requires <b>Chrome or Edge</b> (Web Serial), the <b>CH340</b> USB-serial driver, and this page
+    served over <b>HTTPS or http://localhost</b>. This flashes over USB; for updates once the panel
+    is on WiFi, use the on-device page at <code>http://crowpanel-h2c.local/update</code> instead.
+  </p>
+</body>
+</html>

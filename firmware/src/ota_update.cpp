@@ -3,6 +3,7 @@
 #include <ArduinoOTA.h>
 #include <WiFi.h>
 
+#include "app_config.h"
 #include "config.h"
 #include "ui/ui.h"
 
@@ -18,9 +19,9 @@ void ota_begin() {
     return;
   }
 
-  ArduinoOTA.setHostname(OTA_HOSTNAME);
-  if (OTA_PASSWORD[0] != '\0') {
-    ArduinoOTA.setPassword(OTA_PASSWORD);
+  ArduinoOTA.setHostname(config().otaHostname.c_str());
+  if (config().otaPassword.length() > 0) {
+    ArduinoOTA.setPassword(config().otaPassword.c_str());
   }
 
   ArduinoOTA.onStart([]() {
@@ -55,7 +56,8 @@ void ota_begin() {
 
   ArduinoOTA.begin();
   begun = true;
-  Serial.printf("OTA ready as %s @ %s\n", OTA_HOSTNAME, WiFi.localIP().toString().c_str());
+  Serial.printf("OTA ready as %s @ %s\n", config().otaHostname.c_str(),
+                WiFi.localIP().toString().c_str());
 }
 
 void ota_loop() {

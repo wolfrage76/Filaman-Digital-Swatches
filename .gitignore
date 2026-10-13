@@ -225,3 +225,10 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Local / generated (CrowPanel)
+firmware/managed_components/
+firmware/.dummy/
+firmware/.pio/
+bridge/nohup.out
+**/__pycache__/

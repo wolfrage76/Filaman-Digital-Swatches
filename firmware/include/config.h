@@ -29,19 +29,44 @@
 #endif
 
 #ifndef DISPLAY_TOPIC_PREFIX
-#define DISPLAY_TOPIC_PREFIX "display/h2c"
+#define DISPLAY_TOPIC_PREFIX "display/amsview"
 #endif
 
-constexpr const char *FIRMWARE_VERSION = "0.8.0";
+// --- FilaMan kiosk (filament select / spool create / slicer profiles via REST) ---
+#ifndef FILAMAN_BASE_URL
+#define FILAMAN_BASE_URL "http://192.168.1.209"  // origin, e.g. http://host or https://host
+#endif
+#ifndef FILAMAN_API_KEY
+#define FILAMAN_API_KEY ""  // "uak.1.<secret>" — create once in the FilaMan UI
+#endif
+// Bambuddy printer used for cloud-preset (slicer profile) lookups. 0 = auto-detect
+// the first healthy Bambuddy printer via GET /printers.
+#ifndef FILAMAN_PRINTER_ID
+#define FILAMAN_PRINTER_ID 0
+#endif
+#ifndef FILAMAN_PRINTER_MODEL
+#define FILAMAN_PRINTER_MODEL "P2S"  // model token for cloud-preset filtering
+#endif
+// Skip TLS cert validation for a LAN https FilaMan (ignored for http URLs).
+#ifndef FILAMAN_TLS_INSECURE
+#define FILAMAN_TLS_INSECURE 1
+#endif
+
+constexpr const char *FIRMWARE_VERSION = "0.20.13";
+constexpr int MQTT_SCHEMA_VERSION = 2;
 
 #ifndef OTA_HOSTNAME
-#define OTA_HOSTNAME "crowpanel-h2c"
+#define OTA_HOSTNAME "crowpanel"
+#endif
+
+// POSIX TZ for the finish-time clock. Override in secrets.h. UTC0 if unset.
+#ifndef DISPLAY_TIMEZONE
+#define DISPLAY_TIMEZONE "UTC0"
 #endif
 
 #ifndef OTA_PASSWORD
 #define OTA_PASSWORD ""
 #endif
-
 
 constexpr int SCREEN_WIDTH = 800;
 constexpr int SCREEN_HEIGHT = 480;
@@ -50,17 +75,23 @@ constexpr int AMS2PRO_COUNT = 4;
 constexpr int AMSHT_MAX_COUNT = 4;
 constexpr int COLUMNS_PER_PAGE = 4;
 
-// Page 0 = printer/job status (idle home). Pages 1-4 = AMS 2 Pro. Page 5 = AMS-HT.
+// Page 0 = printer. Page 1 = AMS overview. Pages 2-5 = AMS A-D. Page 6 = HT. Page 7 = alerts.
 constexpr int STATUS_PAGE = 0;
-constexpr int AMS2PRO_FIRST_PAGE = 1;
+constexpr int AMS_OVERVIEW_PAGE = 1;
+constexpr int AMS2PRO_FIRST_PAGE = 2;
 constexpr int AMS_HT_PAGE = AMS2PRO_FIRST_PAGE + AMS2PRO_COUNT;
-constexpr int TOTAL_PAGE_COUNT = AMS_HT_PAGE + 1;
+constexpr int ALERTS_PAGE = AMS_HT_PAGE + 1;
+constexpr int TOTAL_PAGE_COUNT = ALERTS_PAGE + 1;
 
 constexpr int AMS_HT_FIRST_ID = AMS2PRO_COUNT;
 
-constexpr int MQTT_BUFFER_SIZE = 4096;
+constexpr int MQTT_BUFFER_SIZE = 8192;
 constexpr unsigned long WIFI_RECONNECT_MS = 20000;
 constexpr unsigned long WIFI_CONNECT_TIMEOUT_MS = 25000;
 constexpr unsigned long MQTT_RECONNECT_MS = 5000;
 constexpr unsigned long IDLE_RETURN_MS = 60000;
 constexpr unsigned long LVGL_TICK_MS = 5;
+constexpr unsigned long FRESH_LIVE_MS = 15000;
+constexpr unsigned long FRESH_STALE_MS = 90000;
+constexpr int SPOOL_LOW_PERCENT = 30;
+constexpr int SPOOL_CRITICAL_PERCENT = 15;

@@ -1,12 +1,40 @@
 #pragma once
 
+#include "esp_heap_caps.h"
+
+// LVGL's built-in pool is a 128 KB internal-RAM array. That left the panel
+// with only a few KB of heap, so FilaMan polls never ran and the area under
+// the header stayed empty. Widget memory lives in PSRAM instead.
+static inline void *lv_psram_alloc(size_t size) {
+  void *p = heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  if (!p) {
+    p = heap_caps_malloc(size, MALLOC_CAP_8BIT);
+  }
+  return p;
+}
+static inline void lv_psram_free(void *p) { heap_caps_free(p); }
+static inline void *lv_psram_realloc(void *p, size_t size) {
+  void *q = heap_caps_realloc(p, size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  if (!q && size) {
+    q = heap_caps_realloc(p, size, MALLOC_CAP_8BIT);
+  }
+  return q;
+}
+
 #define LV_COLOR_DEPTH 16
 #define LV_COLOR_16_SWAP 0
-#define LV_MEM_CUSTOM 0
+#define LV_MEM_CUSTOM 1
+#define LV_MEM_CUSTOM_INCLUDE "esp_heap_caps.h"
+#define LV_MEM_CUSTOM_ALLOC lv_psram_alloc
+#define LV_MEM_CUSTOM_FREE lv_psram_free
+#define LV_MEM_CUSTOM_REALLOC lv_psram_realloc
 #define LV_MEM_SIZE (128U * 1024U)
 #define LV_TICK_CUSTOM 1
 #define LV_TICK_CUSTOM_INCLUDE "Arduino.h"
 #define LV_TICK_CUSTOM_SYS_TIME_EXPR (millis())
+
+#define LV_DISP_DEF_REFR_PERIOD 16
+#define LV_INDEV_DEF_READ_PERIOD 10
 
 #define LV_USE_LOG 0
 #define LV_USE_PERF_MONITOR 0
@@ -17,6 +45,7 @@
 #define LV_USE_BAR 1
 #define LV_USE_CONT 1
 #define LV_USE_OBJ 1
+#define LV_USE_IMG 1
 
 #define LV_FONT_MONTSERRAT_12 1
 #define LV_FONT_MONTSERRAT_14 1

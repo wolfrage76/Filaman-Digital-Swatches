@@ -1,0 +1,13 @@
+{
+  "name": "CrowPanel H2C",
+  "version": "0.12.0",
+  "new_install_prompt_erase": false,
+  "builds": [
+    {
+      "chipFamily": "ESP32-S3",
+      "parts": [
+        { "path": "firmware/factory.bin", "offset": 0 }
+      ]
+    }
+  ]
+}
