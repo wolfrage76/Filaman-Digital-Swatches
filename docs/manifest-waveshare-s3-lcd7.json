@@ -1,6 +1,6 @@
 {
   "name": "Filaman Digital Swatches (Waveshare)",
-  "version": "0.21.0",
+  "version": "0.21.1",
   "new_install_prompt_erase": true,
   "builds": [
     {

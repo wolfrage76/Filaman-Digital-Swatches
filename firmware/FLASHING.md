@@ -1,6 +1,6 @@
 # Flashing Filaman Digital Swatches
 
-Firmware **v0.21.0**. Supported boards:
+Firmware **v0.21.1**. Supported boards:
 
 | Board | PlatformIO env | Default hostname |
 |---|---|---|

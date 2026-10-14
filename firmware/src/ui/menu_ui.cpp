@@ -1556,7 +1556,7 @@ void showSystem() {
   const uint32_t freeInt = ESP.getFreeHeap() / 1024U;
   const uint32_t freePsram = heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024U;
   addStatLine(card, "Memory",
-              String(freeInt) + " KB RAM  ·  " + String(freePsram) + " KB PSRAM");
+              String(freeInt) + " KB RAM  |  " + String(freePsram) + " KB PSRAM");
 
   makeAction(col, "Refresh", false, [](lv_event_t *) { showSystem(); }, nullptr);
   makeAction(col, "Reboot display", false, onRebootNow, nullptr);

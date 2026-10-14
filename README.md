@@ -2,7 +2,7 @@
 
 A 7″ touchscreen AMS and printer dashboard for Bambu Lab printers, powered by **FilaMan’s Display API**. Runs on the **Elecrow CrowPanel 7″** and the **Waveshare ESP32-S3-Touch-LCD-7**.
 
-**Firmware:** `0.21.0` · **[Web Flasher](https://wolfrage76.github.io/Filaman-Digital-Swatches/)** · **[Releases](https://github.com/wolfrage76/Filaman-Digital-Swatches/releases)**
+**Firmware:** `0.21.1` · **[Web Flasher](https://wolfrage76.github.io/Filaman-Digital-Swatches/)** · **[Releases](https://github.com/wolfrage76/Filaman-Digital-Swatches/releases)**
 
 ![AMS overview on CrowPanel — four AMS units and four AMS-HT slots with filament swatches](docs/images/ams-overview.png)
 
