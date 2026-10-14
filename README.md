@@ -179,5 +179,4 @@ When fallback triggers, the panel subscribes to `<topic prefix>/#` (default `dis
 | `docs/` | GitHub Pages Web Flasher (ESP Web Tools + firmware binaries) |
 | `firmware/` | ESP32-S3 / LVGL firmware (`crowpanel_7_idf`) |
 | `bridge/` | Optional Bambuddy → MQTT publisher for fallback mode |
-| `display-api-llm-brief.md` | FilaMan Display API (schema v3) reference |
 | `firmware/FLASHING.md` | Partition layout, envs, and QA checklist |
