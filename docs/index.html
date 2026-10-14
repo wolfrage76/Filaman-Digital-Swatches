@@ -29,7 +29,7 @@
       line-height: 1.5;
     }
     main {
-      max-width: 640px;
+      max-width: 720px;
       margin: 0 auto;
       padding: 2.5rem 1.25rem 3rem;
     }
@@ -47,6 +47,7 @@
       padding: 1.25rem 1.35rem;
       margin-bottom: 1.25rem;
     }
+    h2 { margin: 0 0 .75rem; font-size: 1.15rem; }
     ol { margin: 0; padding-left: 1.25rem; }
     li { margin: .45rem 0; }
     .choices {
@@ -66,7 +67,7 @@
       gap: .65rem;
       min-height: 100%;
     }
-    .choice h2 {
+    .choice h3 {
       margin: 0;
       font-size: 1.05rem;
     }
@@ -123,17 +124,19 @@
   <main>
     <h1>Filaman Digital Swatches</h1>
     <p class="lead">
-      USB flash for the Elecrow CrowPanel 7″ (ESP32-S3). Choose whether to keep
-      Wi‑Fi / FilaMan settings or wipe the device clean.
+      USB flash for 7″ ESP32-S3 panels: Elecrow CrowPanel and Waveshare
+      ESP32-S3-Touch-LCD-7. Use the section that matches your hardware —
+      the images are not interchangeable.
     </p>
 
     <div class="meta">
-      <span>Firmware 0.20.23</span>
+      <span>Firmware 0.21.0</span>
       <span>ESP32-S3</span>
       <span>Chrome / Edge</span>
     </div>
 
-    <div class="card">
+    <div class="card" id="crowpanel">
+      <h2>Elecrow CrowPanel 7″</h2>
       <ol>
         <li>Install the <b>CH340</b> USB-serial driver if your OS needs it.</li>
         <li>Connect the CrowPanel with a USB <b>data</b> cable.</li>
@@ -143,12 +146,12 @@
 
       <div class="choices">
         <div class="choice keep">
-          <h2>Keep Settings</h2>
+          <h3>Keep Settings</h3>
           <p>
             Updates firmware without wiping NVS. Keeps Wi‑Fi, FilaMan URL/key,
             printer choice, and OTA password.
             If the installer asks to <b>erase</b> the device, choose
-            <b>No</b> / don’t erase — that is what preserves settings.
+            <b>No</b>.
           </p>
           <esp-web-install-button manifest="./manifest-update.json">
             <button slot="activate" type="button">Keep Settings &amp; Update</button>
@@ -156,33 +159,63 @@
         </div>
 
         <div class="choice reset">
-          <h2>Factory Reset</h2>
+          <h3>Factory Reset</h3>
           <p>
             Full install and erase. Wipes all saved settings. Use for first-time
-            flash, a blank screen after a bad update, or when Keep Settings
-            cannot recover the panel.
+            flash or a blank screen after a bad update.
           </p>
           <esp-web-install-button manifest="./manifest-factory.json">
             <button slot="activate" type="button">Factory Reset &amp; Install</button>
           </esp-web-install-button>
         </div>
       </div>
-
       <p class="note">
-        Needs <b>Chrome or Edge</b> (Web Serial) and this page over <b>HTTPS</b>
-        (or <code>http://localhost</code>). Safari and Firefox are not supported.
-        <b>Blank screen after Keep Settings?</b> Use Factory Reset once, then set
-        up Wi‑Fi / FilaMan again.
+        Default hostname after setup: <code>http://crowpanel.local/</code>
+      </p>
+    </div>
+
+    <div class="card" id="waveshare-s3-lcd7">
+      <h2>Waveshare ESP32-S3-Touch-LCD-7</h2>
+      <ol>
+        <li>Connect the board on its <b>USB</b> connector (Chrome / Edge).</li>
+        <li>If the port does not appear: hold <b>BOOT</b>, press <b>RESET</b>, release <b>BOOT</b>.</li>
+        <li>Pick Keep Settings or Factory Reset below — do not use the CrowPanel buttons.</li>
+      </ol>
+
+      <div class="choices">
+        <div class="choice keep">
+          <h3>Keep Settings</h3>
+          <p>
+            App update for Waveshare only. Keeps Wi‑Fi and FilaMan settings when
+            the installer is told not to erase.
+          </p>
+          <esp-web-install-button manifest="./manifest-update-waveshare-s3-lcd7.json">
+            <button slot="activate" type="button">Keep Settings &amp; Update</button>
+          </esp-web-install-button>
+        </div>
+
+        <div class="choice reset">
+          <h3>Factory Reset</h3>
+          <p>
+            Full 16&nbsp;MB image for Waveshare. Use for first flash or recovery.
+          </p>
+          <esp-web-install-button manifest="./manifest-waveshare-s3-lcd7.json">
+            <button slot="activate" type="button">Factory Reset &amp; Install</button>
+          </esp-web-install-button>
+        </div>
+      </div>
+      <p class="note">
+        Default hostname after setup: <code>http://waveshare-ams.local/</code>
       </p>
     </div>
 
     <div class="card">
       <p style="margin:0 0 .6rem"><b>After flashing</b></p>
       <p class="note" style="margin:0">
-        If you factory-reset (or this is a new panel), join Wi‑Fi on the device,
-        then open <code>http://crowpanel.local/</code> to set the FilaMan URL and
-        API key. With Keep Settings, the panel should come back on the same Wi‑Fi
-        and config.
+        Join Wi‑Fi on the device, then open the panel’s
+        <code>.local</code> address (or its IP) to set the FilaMan URL and API key.
+        Needs <b>Chrome or Edge</b> (Web Serial) over <b>HTTPS</b>
+        (or <code>http://localhost</code>).
       </p>
     </div>
   </main>

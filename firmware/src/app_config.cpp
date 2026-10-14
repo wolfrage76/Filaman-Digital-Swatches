@@ -2,6 +2,8 @@
 
 #include <Preferences.h>
 
+#include "boards/board.h"
+
 namespace {
 AppConfig g_config;
 constexpr const char *kNs = "cfg";          // NVS namespace
@@ -90,7 +92,11 @@ void AppConfig::load() {
   filamanApiKey = p.getString("fmKey", FILAMAN_API_KEY);
   filamanPrinterId = p.getInt("fmPrinter", FILAMAN_PRINTER_ID);
   filamanTlsInsecure = p.getBool("fmTls", FILAMAN_TLS_INSECURE);
+#if __has_include("secrets.h")
   otaHostname = p.getString("otaHost", OTA_HOSTNAME);
+#else
+  otaHostname = p.getString("otaHost", BOARD_DEFAULT_HOSTNAME);
+#endif
   otaPassword = p.getString("otaPass", OTA_PASSWORD);
   displayDimMin = p.getInt("dimMin", 5);
   displayOffMin = p.getInt("offMin", 15);

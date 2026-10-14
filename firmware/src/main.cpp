@@ -1,7 +1,6 @@
 #include <Arduino.h>
 #include <time.h>
 #include <cstring>
-#include <Arduino_GFX_Library.h>
 #include <WiFi.h>
 #include <esp_heap_caps.h>
 #include <esp_system.h>
@@ -10,13 +9,16 @@
 
 #include "app_config.h"
 #include "backlight.h"
+#include "boards/board.h"
 #include "config.h"
 #include "device_log.h"
 #include "display_capture.h"
 #include "display_poll.h"
 #include "filaman_client.h"
+#include "hardware/panel.h"
 #include "mqtt_client.h"
 #include "ota_update.h"
+#include "services/board_image.h"
 #include "printer_list.h"
 #include "touch_input.h"
 #include "ui/menu_ui.h"
@@ -30,6 +32,10 @@ SET_LOOP_TASK_STACK_SIZE(24 * 1024);
 // Survives soft resets, so a reboot loop is visible in the boot counter.
 RTC_NOINIT_ATTR uint32_t bootMagic;
 RTC_NOINIT_ATTR uint32_t bootCount;
+
+#ifndef DISPLAY_USE_BOUNCE_BUFFER
+#define DISPLAY_USE_BOUNCE_BUFFER 0
+#endif
 
 namespace {
 
@@ -45,46 +51,8 @@ uint32_t maxLoopUs = 0;
 uint32_t maxLvglUs = 0;
 uint32_t maxNetUs = 0;
 
-constexpr int PANEL_ENABLE_PIN = 38;
 // Offscreen draw buffers in internal SRAM (24 lines = ~38 KB per buffer).
-// Rendering into SRAM avoids Octal-PSRAM round-trips for every drawn pixel;
-// the RGB framebuffer itself stays in PSRAM with SRAM bounce strips for scanout.
 constexpr int LVGL_BUF_LINES = 24;
-// RGB scanout DMA reads these SRAM bounce strips; CPU copies from the PSRAM FB.
-// 10 lines × 800 px is the Espressif-recommended starting point for 800×480.
-constexpr size_t BOUNCE_BUFFER_PX = static_cast<size_t>(SCREEN_WIDTH) * 10;
-
-#if DISPLAY_USE_BOUNCE_BUFFER
-Arduino_ESP32RGBPanel *bus = new Arduino_ESP32RGBPanel(
-    41 /* DE */, 40 /* VSYNC */, 39 /* HSYNC */, 0 /* PCLK */,
-    14 /* R0 */, 21 /* R1 */, 47 /* R2 */, 48 /* R3 */, 45 /* R4 */,
-    9 /* G0 */, 46 /* G1 */, 3 /* G2 */, 8 /* G3 */, 16 /* G4 */, 1 /* G5 */,
-    15 /* B0 */, 7 /* B1 */, 6 /* B2 */, 5 /* B3 */, 4 /* B4 */,
-    0 /* hsync_polarity */, 40 /* hsync_front_porch */, 48 /* hsync_pulse_width */, 40 /* hsync_back_porch */,
-    0 /* vsync_polarity */, 1 /* vsync_front_porch */, 31 /* vsync_pulse_width */, 13 /* vsync_back_porch */,
-    // 800+128 by 480+45 clocks. 15 MHz is ~31 Hz. 30 MHz (~62 Hz) is inside the
-    // EK9716BD3 range but the bounce refill misses: broken lines and the image
-    // jumps. Leave this at 15 until the refill can keep a faster clock.
-    1 /* pclk_active_neg */, 15000000 /* prefer_speed */,
-    false /* useBigEndian */, 0 /* de_idle_high */, 0 /* pclk_idle_high */,
-    BOUNCE_BUFFER_PX);
-#else
-Arduino_ESP32RGBPanel *bus = new Arduino_ESP32RGBPanel(
-    41 /* DE */, 40 /* VSYNC */, 39 /* HSYNC */, 0 /* PCLK */,
-    14 /* R0 */, 21 /* R1 */, 47 /* R2 */, 48 /* R3 */, 45 /* R4 */,
-    9 /* G0 */, 46 /* G1 */, 3 /* G2 */, 8 /* G3 */, 16 /* G4 */, 1 /* G5 */,
-    15 /* B0 */, 7 /* B1 */, 6 /* B2 */, 5 /* B3 */, 4 /* B4 */,
-    0 /* hsync_polarity */, 40 /* hsync_front_porch */, 48 /* hsync_pulse_width */, 40 /* hsync_back_porch */,
-    0 /* vsync_polarity */, 1 /* vsync_front_porch */, 31 /* vsync_pulse_width */, 13 /* vsync_back_porch */,
-    // 8 MHz PCLK: this panel's stable floor. Lower (5-6 MHz) makes the RGB scanout
-    // lose sync -> persistent black flicker. The tab-switch black FLASH is fixed
-    // at the source instead (staged page repaint in ui.cpp gotoPage(), so no single
-    // lv_timer_handler blocks ~200ms), plus per-strip flush pacing (flushDisplay).
-    1 /* pclk_active_neg */, 8000000 /* prefer_speed */);
-#endif
-
-// auto_flush=true: write back only the blitted strip so bounce ISR sees fresh FB data.
-Arduino_RGB_Display *gfx = new Arduino_RGB_Display(SCREEN_WIDTH, SCREEN_HEIGHT, bus, 0 /* rotation */, true /* auto_flush */);
 
 lv_disp_draw_buf_t drawBuffer;
 lv_disp_drv_t displayDriver;
@@ -115,89 +83,14 @@ void pumpDisplay() {
   lv_timer_handler();
 }
 
-extern "C" {
-int Cache_WriteBack_Addr(uint32_t addr, uint32_t size);
-uint32_t Cache_Get_DCache_Line_Size(void);
-}
-
-// ROM Cache_WriteBack_Addr rejects a range that is not a whole cache line and
-// writes nothing. The bounce refill then drops those dirty lines, so a partial
-// LVGL strip stays blank until some later update happens to cover it.
-// IRAM_ATTR: the hot blit path must not fetch instructions over the PSRAM bus
-// it is saturating (firmware runs XIP from PSRAM in this build).
-void IRAM_ATTR writeBackFramebuffer(const void *start, size_t bytes) {
-  uint16_t *fb = gfx->getFramebuffer();
-  if (!fb || !start || bytes == 0) {
-    return;
-  }
-  static uint32_t line = 0;
-  if (line == 0) {
-    line = Cache_Get_DCache_Line_Size();
-    if (line != 16 && line != 32 && line != 64) {
-      line = 32;
-    }
-  }
-  const uintptr_t fbStart = reinterpret_cast<uintptr_t>(fb);
-  const uintptr_t fbEnd =
-      fbStart + static_cast<size_t>(SCREEN_WIDTH) * SCREEN_HEIGHT * sizeof(uint16_t);
-  uintptr_t addr = reinterpret_cast<uintptr_t>(start);
-  uintptr_t end = addr + bytes;
-  uintptr_t aligned = addr & ~(static_cast<uintptr_t>(line) - 1);
-  uintptr_t alignedEnd = (end + line - 1) & ~(static_cast<uintptr_t>(line) - 1);
-  if (aligned < fbStart) {
-    aligned = fbStart;
-  }
-  if (alignedEnd > fbEnd) {
-    alignedEnd = fbEnd;
-  }
-  if (alignedEnd > aligned) {
-    Cache_WriteBack_Addr(static_cast<uint32_t>(aligned),
-                         static_cast<uint32_t>(alignedEnd - aligned));
-  }
-}
-
-void IRAM_ATTR blitStrip(int x, int y, const uint16_t *src, int w, int h) {
-  uint16_t *fb = gfx->getFramebuffer();
-  if (!fb || !src || w <= 0 || h <= 0) {
-    return;
-  }
-  if (x < 0 || y < 0 || x >= SCREEN_WIDTH || y >= SCREEN_HEIGHT) {
-    return;
-  }
-  const int stride = w;
-  if (x + w > SCREEN_WIDTH) {
-    w = SCREEN_WIDTH - x;
-  }
-  if (y + h > SCREEN_HEIGHT) {
-    h = SCREEN_HEIGHT - y;
-  }
-  if (x == 0 && w == SCREEN_WIDTH && stride == SCREEN_WIDTH) {
-    uint16_t *dst = fb + (static_cast<size_t>(y) * SCREEN_WIDTH);
-    const size_t totalBytes = static_cast<size_t>(SCREEN_WIDTH) * static_cast<size_t>(h) * sizeof(uint16_t);
-    memcpy(dst, src, totalBytes);
-    writeBackFramebuffer(dst, totalBytes);
-    return;
-  }
-  uint16_t *firstDst = fb + (static_cast<size_t>(y) * SCREEN_WIDTH) + x;
-  for (int row = 0; row < h; ++row) {
-    uint16_t *dst = fb + (static_cast<size_t>(y + row) * SCREEN_WIDTH) + x;
-    const size_t nbytes = static_cast<size_t>(w) * sizeof(uint16_t);
-    memcpy(dst, src + static_cast<size_t>(row) * stride, nbytes);
-  }
-  const uint16_t *lastEnd = fb + (static_cast<size_t>(y + h - 1) * SCREEN_WIDTH) + x + w;
-  writeBackFramebuffer(firstDst, static_cast<size_t>(lastEnd - firstDst) * sizeof(uint16_t));
-}
-
 // Partial mode: LVGL renders offscreen, so the panel never scans out a
 // half-drawn frame (background-first paint was the visible "black" flash).
 void flushDisplay(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p) {
   const int32_t w = area->x2 - area->x1 + 1;
   const int32_t h = area->y2 - area->y1 + 1;
-  blitStrip(area->x1, area->y1, reinterpret_cast<const uint16_t *>(&color_p->full), w, h);
+  panelBlitStrip(area->x1, area->y1, w, h, reinterpret_cast<const uint16_t *>(&color_p->full));
 #if !DISPLAY_USE_BOUNCE_BUFFER
-  // Direct-PSRAM mode only: hand the PSRAM bus back to scanout after each strip so a
-  // full-screen repaint's write burst can't starve the LCD FIFO (black flash). With
-  // bounce buffers, scanout reads SRAM and this delay is pure wasted latency.
+  // Direct-PSRAM mode only: hand the PSRAM bus back to scanout after each strip.
   yield();
   delayMicroseconds(20 + static_cast<uint32_t>(h) * 12);
 #endif
@@ -227,25 +120,7 @@ void readLvglTouch(lv_indev_drv_t *, lv_indev_data_t *data) {
   }
 }
 
-void setupDisplay() {
-  pinMode(PANEL_ENABLE_PIN, OUTPUT);
-  digitalWrite(PANEL_ENABLE_PIN, LOW);
-
-  if (!gfx->begin()) {
-    device_log("gfx->begin() failed");
-  }
-  gfx->fillScreen(BLACK);
-
-  backlight_begin();
-}
-
-void setupTouch() {
-  touch_input_begin(SCREEN_WIDTH, SCREEN_HEIGHT);
-}
-
 lv_color_t *allocDrawBuffer(size_t pixels) {
-  // SRAM first: the CPU renders every pixel through these buffers, and SRAM
-  // has no SPI-bus latency. Falls back to PSRAM only if SRAM is exhausted.
   lv_color_t *buf = static_cast<lv_color_t *>(
       heap_caps_malloc(pixels * sizeof(lv_color_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
   if (!buf) {
@@ -258,7 +133,7 @@ lv_color_t *allocDrawBuffer(size_t pixels) {
 void setupLvgl() {
   lv_init();
 
-  if (!gfx->getFramebuffer()) {
+  if (!panelFramebuffer()) {
     device_log("RGB framebuffer missing");
     return;
   }
@@ -365,13 +240,10 @@ void beginWifiJoin() {
 void startWifi() {
   WiFi.persistent(false);
   WiFi.mode(WIFI_STA);
-  // Modem sleep cuts PSRAM bus fights with RGB DMA between packets.
   WiFi.setSleep(WIFI_PS_MIN_MODEM);
   WiFi.setHostname(config().otaHostname.c_str());
   WiFi.onEvent(onWifiEvent);
   esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
-  // No WiFi configured yet -> open the on-device setup screen instead of trying
-  // to join with the placeholder SSID.
   if (!config().wifiConfigured()) {
     setStatus("Set up WiFi on screen");
     wifi_setup_open();
@@ -465,6 +337,8 @@ const char *resetReasonText(esp_reset_reason_t reason) {
 void publishDiagnostics() {
   String body = "{\"v\":\"";
   body += FIRMWARE_VERSION;
+  body += "\",\"board\":\"";
+  body += BOARD_ID;
   body += "\",\"up\":" + String(millis());
   body += ",\"boot\":" + String(bootCount);
   body += ",\"rst\":\"" + String(resetReasonText(bootReason)) + "\"";
@@ -487,7 +361,6 @@ void publishDiagnostics() {
     maxLvglUs = 0;
     maxNetUs = 0;
   } else if (display_poll_active()) {
-    // No MQTT bridge — still reset counters so Serial diag stays meaningful.
     maxLoopUs = 0;
     maxLvglUs = 0;
     maxNetUs = 0;
@@ -515,7 +388,7 @@ void setupCallbacks() {
 
 }  // namespace
 
-const uint16_t *display_framebuffer_rgb565() { return gfx->getFramebuffer(); }
+const uint16_t *display_framebuffer_rgb565() { return panelFramebuffer(); }
 
 void setup() {
   Serial.begin(115200);
@@ -526,23 +399,25 @@ void setup() {
     bootCount = 0;
   }
   bootCount++;
-  device_logf("CrowPanel H2C AMS monitor starting (boot #%u, reset=%s)", bootCount,
+  device_logf("%s AMS monitor starting (boot #%u, reset=%s)", BOARD_MODEL, bootCount,
               resetReasonText(bootReason));
+  device_log(boardImageMarker());
 
-  // Load persisted settings first: every init below reads config() (NVS value,
-  // else the compile-time default), and DisplayMqtt::begin() depends on this.
   config().load();
   const char *tz = config().displayTimezone.length() ? config().displayTimezone.c_str() : "UTC0";
   setenv("TZ", tz, 1);
   tzset();
 
-  setupDisplay();
-  setupTouch();
+  boardEarlyInit();
+  if (!panelBegin()) {
+    device_log("panelBegin() failed");
+  }
+  backlight_begin();
   setupLvgl();
   ui_begin();
-  wifi_setup_begin();      // build the (hidden) on-device WiFi setup overlay
-  printer_select_begin();  // build the (hidden) on-device printer picker overlay
-  menu_begin();            // hamburger: screens + on-device configuration
+  wifi_setup_begin();
+  printer_select_begin();
+  menu_begin();
   for (int i = 0; i < 40; ++i) {
     lv_timer_handler();
     delay(5);
@@ -570,11 +445,9 @@ void loop() {
   }
   lastLoopStartMs = nowMs;
 
-  // Draw + touch first so network work can never starve the input device.
   if (!ota_is_active()) {
     lv_timer_handler();
     backlight_loop();
-    // Avoid starting a fresh UI invalidate while WiFi is still draining.
     if (nowMs >= mqttQuietUntilMs) {
       ui_loop();
     }

@@ -1,0 +1,16 @@
+{
+  "name": "Filaman Digital Swatches (Waveshare)",
+  "version": "0.21.0",
+  "new_install_prompt_erase": true,
+  "builds": [
+    {
+      "chipFamily": "ESP32-S3",
+      "parts": [
+        {
+          "path": "firmware/factory-waveshare-s3-lcd7.bin",
+          "offset": 0
+        }
+      ]
+    }
+  ]
+}

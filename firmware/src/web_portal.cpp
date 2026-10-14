@@ -5,8 +5,10 @@
 #include <WiFi.h>
 
 #include <esp_heap_caps.h>
+#include <miniz.h>
 
 #include "app_config.h"
+#include "boards/board.h"
 #include "config.h"
 #include "device_log.h"
 #include "display_capture.h"
@@ -386,7 +388,7 @@ void handleRoot() {
        "<div class='swatch-mark'><span class='sm-1'></span><span class='sm-2'></span>"
        "<span class='sm-3'></span><span class='sm-4'></span></div>"
        "<div><h1 class='brand-title'>Filaman Digital Swatches</h1>"
-       "<p class='brand-sub'>CrowPanel 7&quot; ESP32-S3 Hardware Configuration Console</p></div></div>"
+       "<p class='brand-sub'>" BOARD_MODEL " Hardware Configuration Console</p></div></div>"
        "<div class='telemetry'>"
        "<span class='chip'><span class='dot'></span><strong>";
   h += esc(dataMode);
@@ -673,6 +675,17 @@ void handleGithubUpdate() {
                    "Could not query the latest release from GitHub: " + esc(err), 6, true);
     return;
   }
+  const int cmp = ota_compare_versions(ver, String(FIRMWARE_VERSION));
+  device_logf("GitHub check: remote=v%s local=v%s cmp=%d", ver.c_str(), FIRMWARE_VERSION, cmp);
+  // Only install when GitHub is strictly newer. Equal/older is success, not an error.
+  if (cmp <= 0) {
+    sendStatusPage(200, "Up to Date", "Already on v" + esc(String(FIRMWARE_VERSION)),
+                   "GitHub reports latest v" + esc(ver) +
+                       ". No install needed — your board is current.",
+                   5, false);
+    return;
+  }
+  device_logf("GitHub install: %s", url.c_str());
   if (!ota_install_github_update(url, nullptr, err)) {
     sendStatusPage(500, "OTA Failed", "Firmware Installation Failed",
                    "Error while flashing firmware from GitHub: " + esc(err), 6, true);
@@ -786,10 +799,10 @@ void handleDiagnostics() {
        "<aside class='card'><div class='head'><div><span class='eyebrow'>Panel Output</span>"
        "<h2>Display Screenshot</h2><p class='desc'>Capture the current 800 x 480 framebuffer.</p>"
        "</div></div><div class='shot'>RGB565 framebuffer<br>800 x 480</div>"
-       "<a class='btn primary' style='width:100%' href='/screenshot.bmp' download='filaman-display.bmp'>"
+       "<a class='btn primary' style='width:100%' href='/screenshot.png' download='filaman-display.png'>"
        "Download Current Screenshot</a>"
        "<p class='note'>The image reflects the exact screen currently visible on the panel. "
-       "The download may take several seconds while the framebuffer is converted to BMP.</p></aside></div>"
+       "The download may take a few seconds while the framebuffer is encoded as PNG.</p></aside></div>"
        "<script>"
        "let paused=false;const log=document.getElementById('log'),pause=document.getElementById('pause');"
        "async function load(){if(paused)return;try{const r=await fetch('/diagnostics/logs',{cache:'no-store'});"
@@ -815,16 +828,96 @@ void handleDiagnosticLogs() {
   server.send(200, "text/plain", device_log_snapshot());
 }
 
-void putLe16(uint8_t *p, uint16_t value) {
-  p[0] = static_cast<uint8_t>(value);
-  p[1] = static_cast<uint8_t>(value >> 8);
+void putBe32(uint8_t *p, uint32_t value) {
+  p[0] = static_cast<uint8_t>(value >> 24);
+  p[1] = static_cast<uint8_t>(value >> 16);
+  p[2] = static_cast<uint8_t>(value >> 8);
+  p[3] = static_cast<uint8_t>(value);
 }
 
-void putLe32(uint8_t *p, uint32_t value) {
-  p[0] = static_cast<uint8_t>(value);
-  p[1] = static_cast<uint8_t>(value >> 8);
-  p[2] = static_cast<uint8_t>(value >> 16);
-  p[3] = static_cast<uint8_t>(value >> 24);
+uint32_t pngCrc(const uint8_t *type4, const uint8_t *data, size_t len) {
+  uint32_t crc = mz_crc32(MZ_CRC32_INIT, type4, 4);
+  if (data && len) {
+    crc = mz_crc32(crc, data, len);
+  }
+  return crc;
+}
+
+struct PngBuf {
+  uint8_t *data = nullptr;
+  size_t len = 0;
+  size_t cap = 0;
+  bool ok = true;
+};
+
+bool pngAppend(PngBuf &b, const void *src, size_t n) {
+  if (!b.ok || n == 0) {
+    return b.ok;
+  }
+  if (b.len + n > b.cap) {
+    size_t ncap = b.cap ? b.cap * 2 : 128 * 1024;
+    while (ncap < b.len + n) {
+      ncap *= 2;
+    }
+    auto *nd = static_cast<uint8_t *>(
+        heap_caps_realloc(b.data, ncap, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (!nd) {
+      b.ok = false;
+      return false;
+    }
+    b.data = nd;
+    b.cap = ncap;
+  }
+  memcpy(b.data + b.len, src, n);
+  b.len += n;
+  return true;
+}
+
+bool pngAppendChunk(PngBuf &b, const char type[4], const uint8_t *payload, size_t payloadLen) {
+  uint8_t hdr[8];
+  putBe32(hdr, static_cast<uint32_t>(payloadLen));
+  hdr[4] = static_cast<uint8_t>(type[0]);
+  hdr[5] = static_cast<uint8_t>(type[1]);
+  hdr[6] = static_cast<uint8_t>(type[2]);
+  hdr[7] = static_cast<uint8_t>(type[3]);
+  if (!pngAppend(b, hdr, sizeof(hdr))) {
+    return false;
+  }
+  if (payloadLen && !pngAppend(b, payload, payloadLen)) {
+    return false;
+  }
+  uint8_t crcBuf[4];
+  putBe32(crcBuf, pngCrc(hdr + 4, payload, payloadLen));
+  return pngAppend(b, crcBuf, 4);
+}
+
+mz_bool pngIdatPut(const void *buf, int len, void *user) {
+  auto *out = static_cast<PngBuf *>(user);
+  if (!out || !out->ok || len <= 0) {
+    return MZ_TRUE;
+  }
+  const bool ok =
+      pngAppendChunk(*out, "IDAT", static_cast<const uint8_t *>(buf), static_cast<size_t>(len));
+  yield();
+  return ok ? MZ_TRUE : MZ_FALSE;
+}
+
+bool writeAll(WiFiClient &client, const uint8_t *data, size_t len) {
+  size_t sent = 0;
+  while (sent < len) {
+    if (!client.connected()) {
+      return false;
+    }
+    const size_t n = client.write(data + sent, len - sent);
+    if (n == 0) {
+      delay(1);
+      yield();
+      continue;
+    }
+    sent += n;
+    yield();
+  }
+  return true;
 }
 
 void handleScreenshot() {
@@ -837,44 +930,85 @@ void handleScreenshot() {
     return;
   }
 
-  constexpr uint32_t rowBytes = SCREEN_WIDTH * 3;
-  constexpr uint32_t pixelBytes = rowBytes * SCREEN_HEIGHT;
-  constexpr uint32_t fileBytes = 54 + pixelBytes;
-  uint8_t header[54] = {};
-  header[0] = 'B';
-  header[1] = 'M';
-  putLe32(header + 2, fileBytes);
-  putLe32(header + 10, 54);
-  putLe32(header + 14, 40);
-  putLe32(header + 18, SCREEN_WIDTH);
-  putLe32(header + 22, SCREEN_HEIGHT);
-  putLe16(header + 26, 1);
-  putLe16(header + 28, 24);
-  putLe32(header + 34, pixelBytes);
+  constexpr size_t kRowBytes = 1 + SCREEN_WIDTH * 3;  // filter byte + RGB
+  auto *comp = static_cast<tdefl_compressor *>(
+      heap_caps_malloc(sizeof(tdefl_compressor), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  auto *row = static_cast<uint8_t *>(
+      heap_caps_malloc(kRowBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (!comp || !row) {
+    heap_caps_free(comp);
+    heap_caps_free(row);
+    server.send(507, "text/plain", "Not enough memory for PNG encode");
+    return;
+  }
 
   device_log("Web screenshot capture started");
-  server.sendHeader("Cache-Control", "no-store");
-  server.sendHeader("Content-Disposition", "attachment; filename=filaman-display.bmp");
-  server.setContentLength(fileBytes);
-  server.send(200, "image/bmp", "");
-  WiFiClient client = server.client();
-  client.write(header, sizeof(header));
 
-  uint8_t row[rowBytes];
-  for (int y = SCREEN_HEIGHT - 1; y >= 0; --y) {
+  PngBuf png;
+  static const uint8_t kSig[8] = {137, 80, 78, 71, 13, 10, 26, 10};
+  bool ok = pngAppend(png, kSig, sizeof(kSig));
+
+  uint8_t ihdr[13] = {};
+  putBe32(ihdr + 0, SCREEN_WIDTH);
+  putBe32(ihdr + 4, SCREEN_HEIGHT);
+  ihdr[8] = 8;   // bit depth
+  ihdr[9] = 2;   // RGB
+  ihdr[10] = 0;  // compression
+  ihdr[11] = 0;  // filter
+  ihdr[12] = 0;  // interlace
+  ok = ok && pngAppendChunk(png, "IHDR", ihdr, sizeof(ihdr));
+
+  // Huffman-only keeps the compressor small/fast and avoids deep LZ probes.
+  const int flags = TDEFL_WRITE_ZLIB_HEADER | TDEFL_HUFFMAN_ONLY;
+  tdefl_status st = tdefl_init(comp, pngIdatPut, &png, flags);
+  ok = ok && (st == TDEFL_STATUS_OKAY);
+  if (!ok) {
+    device_logf("PNG encode init failed (tdefl=%d)", static_cast<int>(st));
+  }
+
+  for (int y = 0; ok && png.ok && y < SCREEN_HEIGHT; ++y) {
+    row[0] = 0;  // filter None
     const uint16_t *src = framebuffer + static_cast<size_t>(y) * SCREEN_WIDTH;
     for (int x = 0; x < SCREEN_WIDTH; ++x) {
       const uint16_t pixel = src[x];
-      row[x * 3 + 0] = static_cast<uint8_t>((pixel & 0x1F) * 255 / 31);
-      row[x * 3 + 1] = static_cast<uint8_t>(((pixel >> 5) & 0x3F) * 255 / 63);
-      row[x * 3 + 2] = static_cast<uint8_t>(((pixel >> 11) & 0x1F) * 255 / 31);
+      row[1 + x * 3 + 0] = static_cast<uint8_t>(((pixel >> 11) & 0x1F) * 255 / 31);
+      row[1 + x * 3 + 1] = static_cast<uint8_t>(((pixel >> 5) & 0x3F) * 255 / 63);
+      row[1 + x * 3 + 2] = static_cast<uint8_t>((pixel & 0x1F) * 255 / 31);
     }
-    client.write(row, sizeof(row));
+    st = tdefl_compress_buffer(comp, row, kRowBytes, TDEFL_NO_FLUSH);
+    ok = st >= TDEFL_STATUS_OKAY;
     if ((y & 0x0F) == 0) {
       yield();
     }
   }
-  device_log("Web screenshot capture completed");
+  if (ok && png.ok) {
+    st = tdefl_compress_buffer(comp, nullptr, 0, TDEFL_FINISH);
+    ok = st == TDEFL_STATUS_DONE;
+  }
+  ok = ok && png.ok && pngAppendChunk(png, "IEND", nullptr, 0);
+
+  heap_caps_free(comp);
+  heap_caps_free(row);
+
+  if (!ok || !png.data || png.len < 100) {
+    device_logf("Web screenshot capture failed (ok=%d len=%u)", ok ? 1 : 0,
+                static_cast<unsigned>(png.len));
+    heap_caps_free(png.data);
+    if (!server.client().connected()) {
+      return;
+    }
+    server.send(500, "text/plain", "PNG encode failed");
+    return;
+  }
+
+  server.sendHeader("Cache-Control", "no-store");
+  server.sendHeader("Content-Disposition", "attachment; filename=filaman-display.png");
+  server.setContentLength(png.len);
+  server.send(200, "image/png", "");
+  const bool sent = writeAll(server.client(), png.data, png.len);
+  heap_caps_free(png.data);
+  device_log(sent ? "Web screenshot capture completed"
+                  : "Web screenshot capture send failed");
 }
 
 }  // namespace
@@ -890,7 +1024,8 @@ void web_portal_begin() {
   server.on("/diagnostics", HTTP_GET, handleDiagnostics);
   server.on("/diagnostics/logs", HTTP_GET, handleDiagnosticLogs);
   server.on("/diagnostics/logs", HTTP_DELETE, handleDiagnosticLogs);
-  server.on("/screenshot.bmp", HTTP_GET, handleScreenshot);
+  server.on("/screenshot.png", HTTP_GET, handleScreenshot);
+  server.on("/screenshot.bmp", HTTP_GET, handleScreenshot);  // legacy alias
   // Browser firmware upload over WiFi at /update (writes the inactive OTA slot).
   if (config().otaPassword.length()) {
     httpUpdater.setup(&server, "/update", "admin", config().otaPassword.c_str());

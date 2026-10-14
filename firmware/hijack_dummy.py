@@ -39,14 +39,48 @@ LIBDEPS = os.path.join(env.subst("$PROJECT_LIBDEPS_DIR"), env.subst("$PIOENV"))
 DUMMY = os.path.join(PROJECT_DIR, ".dummy")
 SRC = os.path.join(PROJECT_DIR, "src")
 
+# src_filter is ignored under custom_sdkconfig / ESP-IDF. Pick the board folder
+# from BOARD_* build flags so only one boards/<name>/ tree is compiled.
+BOARD_FOLDERS = {
+    "BOARD_CROWPANEL_7": "crowpanel_7",
+    "BOARD_WAVESHARE_S3_LCD7": "waveshare_s3_lcd7",
+}
+
+
+def selected_board_folder():
+    flags = " ".join(str(f) for f in env.get("CPPDEFINES", []))
+    # CPPDEFINES may be tuples; also scan BUILD_FLAGS text.
+    flags += " " + env.subst("$BUILD_FLAGS")
+    for macro, folder in BOARD_FOLDERS.items():
+        if macro in flags:
+            return folder
+    return None
+
 
 def quote(p):
     return '"{}"'.format(p)
 
 
 def app_sources():
+    board = selected_board_folder()
+    boards_root = os.path.join(SRC, "boards")
     out = []
-    for root, _dirs, files in os.walk(SRC):
+    for root, dirs, files in os.walk(SRC):
+        # Do not descend into other boards' folders.
+        if os.path.commonpath([root, boards_root]) == boards_root:
+            rel = os.path.relpath(root, boards_root)
+            if rel == ".":
+                # Keep board.h's directory; only prune sibling board folders.
+                if board:
+                    dirs[:] = [d for d in dirs if d == board]
+                else:
+                    dirs[:] = []
+            elif board and not (rel == board or rel.startswith(board + os.sep)):
+                dirs[:] = []
+                continue
+            elif board is None:
+                dirs[:] = []
+                continue
         for f in files:
             if f.endswith(".cpp"):
                 out.append(os.path.join(root, f))
@@ -60,6 +94,7 @@ def app_sources():
                 for f in files:
                     if f.endswith(".cpp"):
                         out.append(os.path.join(root, f))
+    print("[hijack_dummy] board folder: {}".format(board or "(none)"))
     return sorted(out)
 
 
@@ -70,11 +105,16 @@ def include_dirs():
         os.path.join(PROJECT_DIR, "include"),
         os.path.join(LIBDEPS, "lvgl"),
         os.path.join(LIBDEPS, "lvgl", "src"),
-        os.path.join(LIBDEPS, "GFX Library for Arduino", "src"),
         os.path.join(LIBDEPS, "PubSubClient", "src"),
         os.path.join(LIBDEPS, "ArduinoJson", "src"),
-        os.path.join(LIBDEPS, "TAMC_GT911"),
     ]
+    # CrowPanel-only libraries (optional — absent on Waveshare builds).
+    for optional in (
+        os.path.join(LIBDEPS, "GFX Library for Arduino", "src"),
+        os.path.join(LIBDEPS, "TAMC_GT911"),
+    ):
+        if os.path.isdir(optional):
+            dirs.append(optional)
     # Arduino-as-component builds do not auto-add every bundled library the way
     # PlatformIO LDF does. Web portal needs WebServer + HTTPUpdateServer.
     pkgs = env.subst("$PROJECT_PACKAGES_DIR")

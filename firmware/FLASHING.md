@@ -1,41 +1,47 @@
-# Flashing CrowPanel 7″ (ESP32-S3)
+# Flashing Filaman Digital Swatches
 
-Firmware **v0.20.23**. Default hostname: **`crowpanel`** → `http://crowpanel.local/`.
+Firmware **v0.21.0**. Supported boards:
+
+| Board | PlatformIO env | Default hostname |
+|---|---|---|
+| Elecrow CrowPanel 7″ | `crowpanel_7_idf` | `crowpanel.local` |
+| Waveshare ESP32-S3-Touch-LCD-7 | `waveshare-s3-lcd7` | `waveshare-ams.local` |
+
+Images for one board must not be flashed onto the other.
 
 ## First install — Web Flasher (recommended)
 
-No command line. Use **Chrome** or **Edge**, a USB data cable, and a CH340 driver if needed:
+No command line. Use **Chrome** or **Edge** and a USB data cable:
 
 **https://wolfrage76.github.io/Filaman-Digital-Swatches/**
 
-1. Connect the CrowPanel.
-2. Choose an install mode:
-   - **Keep Settings & Update** — flashes the app only; keeps Wi‑Fi, FilaMan, and other NVS settings.
-   - **Factory Reset & Install** — full image + erase; wipes saved settings (use for first-time flash).
+1. Open the section for your hardware (CrowPanel or Waveshare).
+2. Choose **Keep Settings & Update** or **Factory Reset & Install**.
 3. Select the serial port and wait for the flash to finish.
-4. After a factory reset (or first boot), configure WiFi and FilaMan on the panel or at `http://crowpanel.local/`.
+4. After a factory reset, configure Wi‑Fi and FilaMan on the panel or at its `.local` URL.
 
-Later updates: **Keep Settings** on the same page, or `http://crowpanel.local/update` once the panel is on WiFi.
+CrowPanel may need a CH340 driver. Waveshare: if the port is missing, hold **BOOT**, press **RESET**, release **BOOT**.
 
 ---
 
 ## Advanced (command line)
 
-Only needed for local builds, partition changes, or scripted OTA.
-
 ### PlatformIO USB flash
-
-Daily env: **`crowpanel_7_idf`** (set as `default_envs` in `platformio.ini`).
 
 ```bash
 cd firmware
 cp include/secrets.h.example include/secrets.h   # first time only
+
+# CrowPanel (default)
 ../.venv/bin/pio run -e crowpanel_7_idf -t upload
+
+# Waveshare
+../.venv/bin/pio run -e waveshare-s3-lcd7 -t upload
 ```
 
-### Rebuild the public factory image (GitHub Pages)
+### Rebuild public flasher images (GitHub Pages)
 
-Do not bake personal `secrets.h` into the published binary:
+Do not bake personal `secrets.h` into published binaries:
 
 ```bash
 cd firmware
@@ -44,43 +50,49 @@ mv include/secrets.h include/secrets.h.local   # if present
 mv include/secrets.h.local include/secrets.h
 ```
 
-Writes `docs/firmware/factory.bin` and the split keep-settings images (`bootloader.bin`, `partitions.bin`, `boot_app0.bin`, `firmware.bin`).
+Writes CrowPanel and Waveshare images under `docs/firmware/`.
 
-### LAN OTA (script / PlatformIO)
-
-Password from `OTA_PASSWORD` in `secrets.h` (never commit that file).
+### LAN OTA
 
 ```bash
 cd firmware
 ./ota.sh                 # default: crowpanel.local
 ./ota.sh 192.168.1.164   # or panel IP
-```
 
-```bash
 OTA_PASSWORD=yourpass ../.venv/bin/pio run -e crowpanel_7_idf_ota -t upload \
   --upload-port crowpanel.local
+
+OTA_PASSWORD=yourpass ../.venv/bin/pio run -e waveshare-s3-lcd7_ota -t upload \
+  --upload-port waveshare-ams.local
 ```
 
-### Browser update (already on WiFi)
+Upload the matching board asset (`firmware-crowpanel-s3-lcd7.bin` vs `firmware-waveshare-s3-lcd7.bin`).
 
-`http://crowpanel.local/update` — user `admin`, password = OTA password.
+### GitHub update from the panel
 
-Config: `http://crowpanel.local/`.
+Menu → **Firmware Update** reads `manifest-update.json` on GitHub Pages for the version stamp (the Waveshare manifest is optional). Install then downloads:
 
-### Panel QA checklist (v0.20.x)
+| Board | Download |
+|---|---|
+| CrowPanel | `docs/firmware/firmware.bin` (copy of `firmware-crowpanel-s3-lcd7.bin`, so older CrowPanel firmware can still update) |
+| Waveshare | `docs/firmware/firmware-waveshare-s3-lcd7.bin` |
 
-1. Header reaches `Live` within ~15 s of a reachable FilaMan Display API.
-2. Alert banner appears when HMS / low-spool alerts exist; tap opens **Alrt**.
-3. Footer jumps: Print, All (overview), A–D, HT, Alrt.
-4. Swipe left/right changes pages.
-5. Idle returns to Print after ~60 s except while viewing active alerts.
-6. Menu and `http://crowpanel.local/` can change WiFi, FilaMan URL/key, and monitored printer.
-7. If FilaMan is down twice in a row (or unset), MQTT fallback under `display/amsview` can still feed the UI.
+The panel refuses an image whose embedded board id does not match. Publish images only from `./webflasher/build_factory.sh` with `secrets.h` moved aside.
 
-### Legacy / experimental envs
+### Adding a board
+
+1. Copy the closest folder under `src/boards/` and `include/boards/`.
+2. Fill `board_config.h` (see `include/boards/board.h`).
+3. Implement `panel.cpp` / `board.cpp` behind `include/hardware/panel.h`.
+4. Add `#elif defined(BOARD_…)` in `include/boards/board.h`.
+5. Add an `[env:…]` in `platformio.ini` with `-DBOARD_…`, `build_src_filter`, and `pre:select_board.py` (required for ESP-IDF / `custom_sdkconfig` builds).
+6. Add flasher manifests and document the env here.
+
+### Legacy / experimental CrowPanel envs
 
 | Env | Notes |
 |---|---|
 | `crowpanel_7_hmi` / `_ota` | Arduino 2.x / IDF 4.4 — older stack |
 | `crowpanel_7_bounce` / `_bounce_ota` | Bounce buffers without full XIP rebuild |
-| `crowpanel_7_idf` / `_idf_ota` | **Current daily build** |
+| `crowpanel_7_idf` / `_idf_ota` | **Current CrowPanel daily build** |
+| `waveshare-s3-lcd7` / `_ota` | **Waveshare daily build** |

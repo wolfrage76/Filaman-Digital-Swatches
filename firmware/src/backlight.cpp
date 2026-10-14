@@ -1,42 +1,51 @@
 #include "backlight.h"
 
+#include <lvgl.h>
+
 #include "app_config.h"
+#include "boards/board.h"
+#include "hardware/panel.h"
 
 namespace {
-
-constexpr int BACKLIGHT_PIN = 2;
-constexpr uint32_t PWM_HZ = 5000;
-constexpr uint8_t PWM_BITS = 8;
 
 enum class Level : uint8_t { Full, Dim, Off };
 
 Level level = Level::Full;
 unsigned long lastActivityMs = 0;
 bool swallowing = false;
-bool pwmOk = false;
+#if !BOARD_BACKLIGHT_PWM
+uint8_t lastSoftDuty = 0xFF;
+#endif
 
 uint8_t dutyForPct(int pct) {
-  if (pct <= 0) return 0;
-  if (pct >= 100) return 255;
+  if (pct <= 0) {
+    return 0;
+  }
+  if (pct >= 100) {
+    return 255;
+  }
   return static_cast<uint8_t>((pct * 255 + 50) / 100);
 }
 
-void writeDuty(uint8_t duty) {
-  if (!pwmOk) {
-    digitalWrite(BACKLIGHT_PIN, duty > 0 ? HIGH : LOW);
+void applyLevelDuty(Level lv) {
+  if (lv == Level::Off) {
+    panelBacklightOff();
     return;
   }
-  ledcWrite(BACKLIGHT_PIN, duty);
-}
-
-void applyLevelDuty(Level lv) {
-  if (lv == Level::Full) {
-    writeDuty(dutyForPct(config().displayFullBrightPct));
-  } else if (lv == Level::Dim) {
-    writeDuty(dutyForPct(config().displayDimBrightPct));
-  } else {
-    writeDuty(0);
+  const uint8_t duty = dutyForPct(lv == Level::Full ? config().displayFullBrightPct
+                                                    : config().displayDimBrightPct);
+  panelBacklightOn(duty);
+  panelSetBrightness(duty);
+#if !BOARD_BACKLIGHT_PWM
+  // Soft-dim is applied only on LVGL flush. Force a full redraw so every
+  // pixel picks up the new factor (otherwise stale strips stay bright).
+  if (duty != lastSoftDuty) {
+    lastSoftDuty = duty;
+    if (lv_disp_get_default()) {
+      lv_obj_invalidate(lv_scr_act());
+    }
   }
+#endif
 }
 
 void setLevel(Level next) {
@@ -50,8 +59,6 @@ void setLevel(Level next) {
 }  // namespace
 
 void backlight_begin() {
-  pinMode(BACKLIGHT_PIN, OUTPUT);
-  pwmOk = ledcAttach(BACKLIGHT_PIN, PWM_HZ, PWM_BITS);
   level = Level::Full;
   applyLevelDuty(level);
   lastActivityMs = millis();

@@ -2,8 +2,9 @@
 
 #include <Arduino.h>
 
-// CrowPanel backlight on GPIO 2. Dim and off are minutes from the last touch.
-// A tap while dim or off restores full brightness and is not delivered to LVGL.
+// Dim and off are minutes from the last touch. A tap while dim or off restores
+// full brightness and is not delivered to LVGL. Hardware PWM vs soft-dim is
+// decided by BOARD_BACKLIGHT_PWM in the board panel driver.
 
 void backlight_begin();
 void backlight_loop();

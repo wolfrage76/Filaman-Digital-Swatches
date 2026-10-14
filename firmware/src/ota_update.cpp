@@ -8,8 +8,10 @@
 #include <WiFiClientSecure.h>
 
 #include "app_config.h"
+#include "boards/board.h"
 #include "config.h"
 #include "device_log.h"
+#include "services/board_image.h"
 #include "ui/menu_ui.h"
 #include "ui/ui.h"
 
@@ -31,12 +33,24 @@ bool sawWifiConnected = false;
 constexpr unsigned long kAutoCheckFirstDelayMs = 90UL * 1000UL;
 constexpr unsigned long kAutoCheckIntervalMs = 60UL * 60UL * 1000UL;
 
-constexpr const char *kManifestUrl =
-    "https://wolfrage76.github.io/Filaman-Digital-Swatches/manifest-update.json";
-constexpr const char *kPagesFirmwareUrl =
-    "https://wolfrage76.github.io/Filaman-Digital-Swatches/firmware/firmware.bin";
 constexpr const char *kReleasesApiUrl =
     "https://api.github.com/repos/wolfrage76/Filaman-Digital-Swatches/releases/latest";
+constexpr const char *kPagesBase =
+    "https://wolfrage76.github.io/Filaman-Digital-Swatches/";
+// Shared version stamp (always published). Board-specific manifests may lag.
+constexpr const char *kSharedManifestPath = "manifest-update.json";
+
+String pagesBoardManifestPath() {
+#if defined(BOARD_WAVESHARE_S3_LCD7)
+  return "manifest-update-waveshare-s3-lcd7.json";
+#else
+  return "manifest-update.json";
+#endif
+}
+
+String pagesFirmwareUrl() {
+  return String(kPagesBase) + "firmware/" + BOARD_OTA_ASSET;
+}
 
 String cleanVersion(const String &v) {
   String s = v;
@@ -45,6 +59,60 @@ String cleanVersion(const String &v) {
     s.remove(0, 1);
   }
   return s;
+}
+
+// Discard unread response bytes so the next TLS request is not stuck.
+void drainHttp(HTTPClient &http) {
+  WiFiClient *stream = http.getStreamPtr();
+  if (!stream) {
+    return;
+  }
+  uint8_t sink[256];
+  unsigned long start = millis();
+  while (http.connected() && (millis() - start) < 2000) {
+    const int avail = stream->available();
+    if (avail <= 0) {
+      delay(2);
+      if (!stream->available()) {
+        break;
+      }
+      continue;
+    }
+    const int n = stream->readBytes(sink, avail > (int)sizeof(sink) ? sizeof(sink) : avail);
+    if (n <= 0) {
+      break;
+    }
+  }
+}
+
+// Fetch a tiny Pages JSON and read "version". Returns HTTP code (0 = connect fail).
+int fetchPagesVersion(const char *manifestPath, String &versionOut) {
+  versionOut = "";
+  WiFiClientSecure secure;
+  secure.setInsecure();
+  HTTPClient http;
+  http.setTimeout(10000);
+  http.setReuse(false);
+  http.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
+  const String url = String(kPagesBase) + manifestPath;
+  if (!http.begin(secure, url)) {
+    return 0;
+  }
+  http.addHeader("Cache-Control", "no-cache");
+  http.addHeader("Accept", "application/json");
+  const int code = http.GET();
+  if (code == 200) {
+    const String body = http.getString();
+    JsonDocument doc;
+    if (deserializeJson(doc, body) == DeserializationError::Ok) {
+      versionOut = cleanVersion(doc["version"] | "");
+    }
+  } else if (code > 0) {
+    // Board-specific manifests 404 until published; drain so TLS can be reused.
+    drainHttp(http);
+  }
+  http.end();
+  return code;
 }
 
 void parseVersionParts(const String &v, int parts[3]) {
@@ -85,79 +153,106 @@ bool ota_check_github_update(String &latestVersionOut, String &downloadUrlOut, S
     return false;
   }
 
-  // 1. Check GitHub Pages manifest first (tiny JSON, fast, no API rate limit).
-  {
-    WiFiClientSecure secure;
-    secure.setInsecure();
-    HTTPClient http;
-    http.setTimeout(8000);
-    http.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
-    if (http.begin(secure, kManifestUrl)) {
-      http.addHeader("Cache-Control", "no-cache");
-      const int code = http.GET();
-      if (code == 200) {
-        JsonDocument doc;
-        if (deserializeJson(doc, http.getStream()) == DeserializationError::Ok) {
-          const String ver = cleanVersion(doc["version"] | "");
-          if (ver.length() > 0) {
-            latestVersionOut = ver;
-            downloadUrlOut = kPagesFirmwareUrl;
-          }
-        }
-      }
-      http.end();
+  // 1. Shared Pages manifest first (always published). Board-specific files may
+  // 404 on Waveshare until dual-board Pages is pushed — never depend on them
+  // for the version stamp. Download URL still targets this board's asset name.
+  String ver;
+  int pagesCode = fetchPagesVersion(kSharedManifestPath, ver);
+  if (ver.length()) {
+    latestVersionOut = ver;
+    downloadUrlOut = pagesFirmwareUrl();
+  }
+
+  // Optional: board manifest may advertise a newer board-only build.
+  const String boardPath = pagesBoardManifestPath();
+  if (boardPath != kSharedManifestPath) {
+    String boardVer;
+    const int boardCode = fetchPagesVersion(boardPath.c_str(), boardVer);
+    if (boardVer.length() &&
+        (!latestVersionOut.length() || ota_compare_versions(boardVer, latestVersionOut) > 0)) {
+      latestVersionOut = boardVer;
+      downloadUrlOut = pagesFirmwareUrl();
+    }
+    if (boardCode > 0) {
+      pagesCode = boardCode;
     }
   }
 
-  // 2. Also check GitHub Releases API if Pages failed or to pick up a newer release tag.
-  {
+  // 2. Releases API only if Pages gave us nothing (saves heap on RGB boards).
+  if (!latestVersionOut.length()) {
     WiFiClientSecure secure;
     secure.setInsecure();
     HTTPClient http;
-    http.setTimeout(8000);
+    http.setTimeout(10000);
+    http.setReuse(false);
     http.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
     if (http.begin(secure, kReleasesApiUrl)) {
-      http.addHeader("User-Agent", "CrowPanel-Filaman-Swatches");
+      http.addHeader("User-Agent", String("FilamanSwatches/") + BOARD_ID);
       http.addHeader("Accept", "application/vnd.github+json");
       const int code = http.GET();
       if (code == 200) {
+        const String body = http.getString();
         JsonDocument filter;
         filter["tag_name"] = true;
         filter["assets"][0]["name"] = true;
         filter["assets"][0]["browser_download_url"] = true;
         JsonDocument doc;
-        if (deserializeJson(doc, http.getStream(), DeserializationOption::Filter(filter)) ==
+        if (deserializeJson(doc, body, DeserializationOption::Filter(filter)) ==
             DeserializationError::Ok) {
           const String relVer = cleanVersion(doc["tag_name"] | "");
-          if (relVer.length() > 0 &&
-              (!latestVersionOut.length() || ota_compare_versions(relVer, latestVersionOut) > 0)) {
+          if (relVer.length()) {
             latestVersionOut = relVer;
-            downloadUrlOut = kPagesFirmwareUrl;
+            downloadUrlOut = pagesFirmwareUrl();
             for (JsonObject asset : doc["assets"].as<JsonArray>()) {
               const String name = asset["name"] | "";
               const String url = asset["browser_download_url"] | "";
-              if (url.length() && (name.endsWith("-ota.bin") || name == "firmware.bin")) {
+              if (url.length() && name == BOARD_OTA_ASSET) {
                 downloadUrlOut = url;
                 break;
               }
             }
+          } else {
+            errorOut = "GitHub release missing tag_name";
           }
+        } else {
+          errorOut = "GitHub release JSON parse failed";
         }
-      } else if (!latestVersionOut.length()) {
+      } else {
+        drainHttp(http);
         errorOut = String("GitHub HTTP ") + code;
+        if (pagesCode > 0 && pagesCode != 200) {
+          errorOut += String(" (Pages HTTP ") + pagesCode + ")";
+        }
       }
       http.end();
-    } else if (!latestVersionOut.length()) {
-      errorOut = "Connection failed";
+    } else {
+      errorOut = "GitHub connection failed";
+      if (pagesCode > 0 && pagesCode != 200) {
+        errorOut += String(" (Pages HTTP ") + pagesCode + ")";
+      }
     }
   }
 
   if (!latestVersionOut.length()) {
     if (!errorOut.length()) {
       errorOut = "Could not read version from GitHub";
+      if (pagesCode > 0 && pagesCode != 200) {
+        errorOut += String(" (Pages HTTP ") + pagesCode + ")";
+      }
     }
+    device_logf("GitHub version check failed: %s", errorOut.c_str());
     return false;
   }
+
+  // Until renamed board assets are on Pages, CrowPanel can still fetch the
+  // legacy shared firmware.bin used by the published update manifest.
+#if !defined(BOARD_WAVESHARE_S3_LCD7)
+  if (downloadUrlOut.endsWith(BOARD_OTA_ASSET)) {
+    downloadUrlOut = String(kPagesBase) + "firmware/firmware.bin";
+  }
+#endif
+
+  device_logf("GitHub version: v%s -> %s", latestVersionOut.c_str(), downloadUrlOut.c_str());
   rememberCheckResult(latestVersionOut, downloadUrlOut);
   return true;
 }
@@ -171,7 +266,7 @@ bool ota_install_github_update(const String &downloadUrl,
     return false;
   }
 
-  const String url = downloadUrl.length() ? downloadUrl : String(kPagesFirmwareUrl);
+  const String url = downloadUrl.length() ? downloadUrl : String(pagesFirmwareUrl());
   active = true;
   ui_set_connection_status("GitHub OTA...");
 
@@ -187,7 +282,7 @@ bool ota_install_github_update(const String &downloadUrl,
     errorOut = "HTTP begin failed";
     return false;
   }
-  http.addHeader("User-Agent", "CrowPanel-Filaman-Swatches");
+  http.addHeader("User-Agent", String("FilamanSwatches-") + BOARD_ID);
 
   const int code = http.GET();
   if (code != 200) {
@@ -216,6 +311,7 @@ bool ota_install_github_update(const String &downloadUrl,
     onProgress(0);
   }
 
+  boardImageScanBegin();
   WiFiClient *stream = http.getStreamPtr();
   uint8_t buf[2048];
   size_t written = 0;
@@ -228,6 +324,7 @@ bool ota_install_github_update(const String &downloadUrl,
       const size_t toRead = avail > sizeof(buf) ? sizeof(buf) : avail;
       const int readBytes = stream->readBytes(buf, toRead);
       if (readBytes > 0) {
+        boardImageScanFeed(buf, static_cast<size_t>(readBytes));
         if (Update.write(buf, static_cast<size_t>(readBytes)) != static_cast<size_t>(readBytes)) {
           Update.abort();
           http.end();
@@ -264,6 +361,13 @@ bool ota_install_github_update(const String &downloadUrl,
     Update.abort();
     active = false;
     errorOut = "Download incomplete";
+    return false;
+  }
+
+  if (!boardImageScanAccepts()) {
+    Update.abort();
+    active = false;
+    errorOut = String("Wrong board image (need ") + BOARD_OTA_ASSET + ")";
     return false;
   }
 

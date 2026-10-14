@@ -23,14 +23,23 @@
 
 namespace {
 
-constexpr uint32_t COL_BG = 0x0A0E14;
-constexpr uint32_t COL_SURFACE_2 = 0x182028;
-constexpr uint32_t COL_BORDER = 0x2A3544;
-constexpr uint32_t COL_TEXT = 0xF2F5F8;
-constexpr uint32_t COL_MUTED = 0x8B98A8;
+// Filament-swatch console: deep ink panels, mint accent, soft radii.
+constexpr uint32_t COL_BG = 0x070A0F;
+constexpr uint32_t COL_SURFACE = 0x111823;
+constexpr uint32_t COL_SURFACE_2 = 0x151F2D;
+constexpr uint32_t COL_INSET = 0x0B1017;
+constexpr uint32_t COL_BORDER = 0x222F42;
+constexpr uint32_t COL_BORDER_SOFT = 0x1A2433;
+constexpr uint32_t COL_TEXT = 0xEEF2F7;
+constexpr uint32_t COL_MUTED = 0x8A99AD;
+constexpr uint32_t COL_DIM = 0x59687B;
 constexpr uint32_t COL_ACCENT = 0x3DDC97;
-constexpr uint32_t COL_WARN = 0xFFB020;
+constexpr uint32_t COL_ACCENT_DIM = 0x15261F;
+constexpr uint32_t COL_WARN = 0xFFB443;
 constexpr uint32_t COL_DANGER = 0xFF5C6A;
+constexpr lv_coord_t kRadiusCard = 12;
+constexpr lv_coord_t kRadiusCtl = 10;
+constexpr lv_coord_t kRadiusChip = 8;
 
 enum class Pane { Home, Filaman, Mqtt, Device, Display, Update, System };
 
@@ -144,8 +153,8 @@ lv_obj_t *makeScroll() {
   lv_obj_set_flex_grow(col, 1);
   lv_obj_set_style_min_height(col, 0, 0);
   lv_obj_set_flex_flow(col, LV_FLEX_FLOW_COLUMN);
-  lv_obj_set_style_pad_row(col, 10, 0);
-  lv_obj_set_style_pad_bottom(col, 16, 0);
+  lv_obj_set_style_pad_row(col, 12, 0);
+  lv_obj_set_style_pad_bottom(col, 20, 0);
   lv_obj_set_scroll_dir(col, LV_DIR_VER);
   // No scrollbar overlay while scrolling: it is a masked rounded rect
   // repainted every scroll frame. Shown again once the list settles.
@@ -161,24 +170,76 @@ lv_obj_t *makeCard(lv_obj_t *parent) {
   lv_obj_set_width(card, lv_pct(100));
   lv_obj_set_height(card, LV_SIZE_CONTENT);
   lv_obj_set_flex_flow(card, LV_FLEX_FLOW_COLUMN);
-  lv_obj_set_style_bg_color(card, lv_color_hex(COL_SURFACE_2), 0);
+  lv_obj_set_style_bg_color(card, lv_color_hex(COL_SURFACE), 0);
   lv_obj_set_style_bg_opa(card, LV_OPA_COVER, 0);
   lv_obj_set_style_border_width(card, 1, 0);
   lv_obj_set_style_border_color(card, lv_color_hex(COL_BORDER), 0);
-  lv_obj_set_style_radius(card, 0, 0);
-  lv_obj_set_style_pad_all(card, 12, 0);
-  lv_obj_set_style_pad_row(card, 8, 0);
+  lv_obj_set_style_radius(card, kRadiusCard, 0);
+  lv_obj_set_style_pad_all(card, 14, 0);
+  lv_obj_set_style_pad_row(card, 10, 0);
+  lv_obj_set_style_clip_corner(card, true, 0);
   lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
   return card;
 }
 
+void addCardHeader(lv_obj_t *card, const char *title, const char *subtitle) {
+  lv_obj_t *wrap = lv_obj_create(card);
+  lv_obj_remove_style_all(wrap);
+  lv_obj_set_width(wrap, lv_pct(100));
+  lv_obj_set_height(wrap, LV_SIZE_CONTENT);
+  lv_obj_set_flex_flow(wrap, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_style_pad_row(wrap, 2, 0);
+  lv_obj_set_style_pad_bottom(wrap, 4, 0);
+  lv_obj_set_style_border_side(wrap, LV_BORDER_SIDE_BOTTOM, 0);
+  lv_obj_set_style_border_width(wrap, 1, 0);
+  lv_obj_set_style_border_color(wrap, lv_color_hex(COL_BORDER_SOFT), 0);
+  lv_obj_set_style_pad_bottom(wrap, 10, 0);
+  lv_obj_clear_flag(wrap, LV_OBJ_FLAG_SCROLLABLE);
+
+  lv_obj_t *t = lv_label_create(wrap);
+  lv_obj_set_style_text_font(t, &lv_font_montserrat_16, 0);
+  lv_obj_set_style_text_color(t, lv_color_hex(COL_TEXT), 0);
+  lv_label_set_text(t, title);
+
+  if (subtitle && subtitle[0]) {
+    lv_obj_t *s = lv_label_create(wrap);
+    lv_obj_set_style_text_font(s, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(s, lv_color_hex(COL_MUTED), 0);
+    lv_label_set_long_mode(s, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(s, lv_pct(100));
+    lv_label_set_text(s, subtitle);
+  }
+}
+
 void styleButton(lv_obj_t *btn, bool accent) {
-  lv_obj_set_style_min_height(btn, 46, 0);
-  lv_obj_set_style_radius(btn, 0, 0);
+  lv_obj_set_style_min_height(btn, 48, 0);
+  lv_obj_set_style_radius(btn, kRadiusCtl, 0);
   lv_obj_set_style_border_width(btn, accent ? 0 : 1, 0);
   lv_obj_set_style_border_color(btn, lv_color_hex(COL_BORDER), 0);
   lv_obj_set_style_bg_color(btn, lv_color_hex(accent ? COL_ACCENT : COL_SURFACE_2), 0);
   lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
+  lv_obj_set_style_shadow_width(btn, 0, 0);
+}
+
+void styleChip(lv_obj_t *btn, bool selected, bool allowed) {
+  lv_obj_set_style_radius(btn, kRadiusChip, 0);
+  lv_obj_set_style_shadow_width(btn, 0, 0);
+  if (!allowed) {
+    lv_obj_set_style_bg_color(btn, lv_color_hex(COL_INSET), 0);
+    lv_obj_set_style_bg_opa(btn, LV_OPA_40, 0);
+    lv_obj_set_style_border_width(btn, 1, 0);
+    lv_obj_set_style_border_color(btn, lv_color_hex(COL_BORDER_SOFT), 0);
+    return;
+  }
+  lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
+  if (selected) {
+    lv_obj_set_style_bg_color(btn, lv_color_hex(COL_ACCENT), 0);
+    lv_obj_set_style_border_width(btn, 0, 0);
+  } else {
+    lv_obj_set_style_bg_color(btn, lv_color_hex(COL_INSET), 0);
+    lv_obj_set_style_border_width(btn, 1, 0);
+    lv_obj_set_style_border_color(btn, lv_color_hex(COL_BORDER), 0);
+  }
 }
 
 lv_obj_t *makeAction(lv_obj_t *parent, const char *text, bool accent, lv_event_cb_t cb, void *ud) {
@@ -196,10 +257,58 @@ lv_obj_t *makeAction(lv_obj_t *parent, const char *text, bool accent, lv_event_c
   return btn;
 }
 
+lv_obj_t *makeToggleAction(lv_obj_t *parent, bool on, lv_event_cb_t cb) {
+  lv_obj_t *btn = lv_btn_create(parent);
+  lv_obj_set_width(btn, lv_pct(100));
+  lv_obj_set_height(btn, 52);
+  lv_obj_set_style_radius(btn, kRadiusCtl, 0);
+  lv_obj_set_style_bg_color(btn, lv_color_hex(on ? COL_ACCENT_DIM : COL_SURFACE_2), 0);
+  lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
+  lv_obj_set_style_border_width(btn, 1, 0);
+  lv_obj_set_style_border_color(btn, lv_color_hex(on ? COL_ACCENT : COL_BORDER), 0);
+  lv_obj_set_style_shadow_width(btn, 0, 0);
+  lv_obj_set_style_pad_hor(btn, 14, 0);
+  lv_obj_set_flex_flow(btn, LV_FLEX_FLOW_ROW);
+  lv_obj_set_flex_align(btn, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+  lv_obj_t *lbl = lv_label_create(btn);
+  lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_color(lbl, lv_color_hex(COL_TEXT), 0);
+  lv_label_set_long_mode(lbl, LV_LABEL_LONG_DOT);
+  lv_obj_set_flex_grow(lbl, 1);
+  lv_obj_set_width(lbl, 0);
+
+  lv_obj_t *pill = lv_obj_create(btn);
+  lv_obj_remove_style_all(pill);
+  lv_obj_set_size(pill, 44, 24);
+  lv_obj_set_style_radius(pill, LV_RADIUS_CIRCLE, 0);
+  lv_obj_set_style_bg_color(pill, lv_color_hex(on ? COL_ACCENT : 0x1C2635), 0);
+  lv_obj_set_style_bg_opa(pill, LV_OPA_COVER, 0);
+  lv_obj_set_style_border_width(pill, 1, 0);
+  lv_obj_set_style_border_color(pill, lv_color_hex(on ? COL_ACCENT : COL_BORDER), 0);
+  lv_obj_clear_flag(pill, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+
+  lv_obj_t *knob = lv_obj_create(pill);
+  lv_obj_remove_style_all(knob);
+  lv_obj_set_size(knob, 18, 18);
+  lv_obj_set_style_radius(knob, LV_RADIUS_CIRCLE, 0);
+  lv_obj_set_style_bg_color(knob, lv_color_hex(on ? COL_BG : COL_MUTED), 0);
+  lv_obj_set_style_bg_opa(knob, LV_OPA_COVER, 0);
+  lv_obj_clear_flag(knob, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_align(knob, on ? LV_ALIGN_RIGHT_MID : LV_ALIGN_LEFT_MID, on ? -3 : 3, 0);
+
+  if (cb) {
+    lv_obj_add_event_cb(btn, cb, LV_EVENT_CLICKED, nullptr);
+  }
+  return btn;
+}
+
 void addSection(lv_obj_t *parent, const char *text) {
   lv_obj_t *lbl = lv_label_create(parent);
   lv_obj_set_style_text_font(lbl, &lv_font_montserrat_12, 0);
-  lv_obj_set_style_text_color(lbl, lv_color_hex(COL_MUTED), 0);
+  lv_obj_set_style_text_color(lbl, lv_color_hex(COL_ACCENT), 0);
+  lv_obj_set_style_text_letter_space(lbl, 1, 0);
+  lv_obj_set_style_pad_top(lbl, 4, 0);
   lv_label_set_text(lbl, text);
 }
 
@@ -369,9 +478,9 @@ lv_obj_t *makeMenuTile(lv_obj_t *parent, MenuIcon iconKind, const char *label, b
   lv_obj_set_width(btn, 0);
   lv_obj_set_height(btn, lv_pct(100));
   lv_obj_set_style_radius(btn, 14, 0);
-  lv_obj_set_style_bg_color(btn, lv_color_hex(emphasize ? 0x15261F : COL_SURFACE_2), 0);
+  lv_obj_set_style_bg_color(btn, lv_color_hex(emphasize ? COL_ACCENT_DIM : COL_SURFACE), 0);
   lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
-  lv_obj_set_style_bg_color(btn, lv_color_hex(emphasize ? 0x1C3228 : 0x1E2A34), LV_STATE_PRESSED);
+  lv_obj_set_style_bg_color(btn, lv_color_hex(emphasize ? 0x1C3228 : COL_SURFACE_2), LV_STATE_PRESSED);
   lv_obj_set_style_border_width(btn, emphasize ? 2 : 1, 0);
   lv_obj_set_style_border_color(btn, lv_color_hex(emphasize ? COL_ACCENT : COL_BORDER), 0);
   lv_obj_set_style_shadow_width(btn, 0, 0);
@@ -397,7 +506,7 @@ lv_obj_t *makeMenuTile(lv_obj_t *parent, MenuIcon iconKind, const char *label, b
   lv_obj_remove_style_all(chip);
   lv_obj_set_size(chip, 36, 36);
   lv_obj_set_style_radius(chip, 10, 0);
-  lv_obj_set_style_bg_color(chip, lv_color_hex(emphasize ? COL_ACCENT : 0x243040), 0);
+  lv_obj_set_style_bg_color(chip, lv_color_hex(emphasize ? COL_ACCENT : COL_INSET), 0);
   lv_obj_set_style_bg_opa(chip, LV_OPA_COVER, 0);
   lv_obj_clear_flag(chip, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
   lv_obj_t *icon = lv_obj_create(chip);
@@ -489,12 +598,13 @@ lv_obj_t *addField(lv_obj_t *parent, const char *caption, const char *value, boo
 
   lv_obj_t *ta = lv_textarea_create(parent);
   lv_obj_set_width(ta, lv_pct(100));
-  lv_obj_set_style_bg_color(ta, lv_color_hex(COL_BG), 0);
+  lv_obj_set_style_bg_color(ta, lv_color_hex(COL_INSET), 0);
   lv_obj_set_style_border_color(ta, lv_color_hex(COL_BORDER), 0);
   lv_obj_set_style_border_width(ta, 1, 0);
-  lv_obj_set_style_radius(ta, 0, 0);
+  lv_obj_set_style_radius(ta, kRadiusChip, 0);
   lv_obj_set_style_text_color(ta, lv_color_hex(COL_TEXT), 0);
-  lv_obj_set_style_pad_ver(ta, 8, 0);
+  lv_obj_set_style_pad_ver(ta, 10, 0);
+  lv_obj_set_style_pad_hor(ta, 12, 0);
   lv_textarea_set_one_line(ta, true);
   if (secret) {
     lv_textarea_set_placeholder_text(ta, "leave blank to keep");
@@ -564,11 +674,30 @@ void onSave(lv_event_t *) {
   restartSaved();
 }
 
-void onTls(lv_event_t *) {
+void refreshToggleVisual(lv_obj_t *btn, bool on) {
+  if (!btn) {
+    return;
+  }
+  lv_obj_set_style_bg_color(btn, lv_color_hex(on ? COL_ACCENT_DIM : COL_SURFACE_2), 0);
+  lv_obj_set_style_border_color(btn, lv_color_hex(on ? COL_ACCENT : COL_BORDER), 0);
+  lv_obj_t *pill = lv_obj_get_child(btn, 1);
+  if (!pill) {
+    return;
+  }
+  lv_obj_set_style_bg_color(pill, lv_color_hex(on ? COL_ACCENT : 0x1C2635), 0);
+  lv_obj_set_style_border_color(pill, lv_color_hex(on ? COL_ACCENT : COL_BORDER), 0);
+  if (lv_obj_t *knob = lv_obj_get_child(pill, 0)) {
+    lv_obj_set_style_bg_color(knob, lv_color_hex(on ? COL_BG : COL_MUTED), 0);
+    lv_obj_align(knob, on ? LV_ALIGN_RIGHT_MID : LV_ALIGN_LEFT_MID, on ? -3 : 3, 0);
+  }
+}
+
+void onTls(lv_event_t *event) {
   tlsOn = !tlsOn;
   if (tlsLabel) {
-    lv_label_set_text(tlsLabel, tlsOn ? "TLS insecure: on" : "TLS insecure: off");
+    lv_label_set_text(tlsLabel, "Allow insecure TLS");
   }
+  refreshToggleVisual(lv_event_get_target(event), tlsOn);
 }
 
 void onTestFilaman(lv_event_t *) {
@@ -745,18 +874,19 @@ void showFilaman() {
   pane = Pane::Filaman;
   clearContent();
   lv_label_set_text(titleLabel, "FilaMan");
-  setStatus("Blank API key keeps the saved key.", COL_MUTED);
+  setStatus("Connection to your FilaMan server", COL_MUTED);
   tlsOn = config().filamanTlsInsecure;
 
   lv_obj_t *col = makeScroll();
   lv_obj_t *card = makeCard(col);
+  addCardHeader(card, "Server", "Blank API key keeps the key already saved on this display.");
   addField(card, "Base URL", config().filamanBaseUrl.c_str(), false);
   addField(card, "API key", "", true);
-  lv_obj_t *tlsBtn = makeAction(card, "", false, onTls, nullptr);
+  lv_obj_t *tlsBtn = makeToggleAction(card, tlsOn, onTls);
   tlsLabel = lv_obj_get_child(tlsBtn, 0);
-  lv_label_set_text(tlsLabel, tlsOn ? "TLS insecure: on" : "TLS insecure: off");
+  lv_label_set_text(tlsLabel, tlsOn ? "Allow insecure TLS" : "Allow insecure TLS");
 
-  makeAction(col, "Test Connection", false, onTestFilaman, nullptr);
+  makeAction(col, "Test connection", false, onTestFilaman, nullptr);
   makeAction(col, "Save & reboot", true, onSave, nullptr);
 }
 
@@ -764,17 +894,18 @@ void showMqtt() {
   pane = Pane::Mqtt;
   clearContent();
   lv_label_set_text(titleLabel, "MQTT");
-  setStatus("Blank password keeps the saved password.", COL_MUTED);
+  setStatus("Optional telemetry broker", COL_MUTED);
 
   lv_obj_t *col = makeScroll();
   lv_obj_t *card = makeCard(col);
+  addCardHeader(card, "Broker", "Blank password keeps the password already saved.");
   const String port = String(config().mqttPort);
   addField(card, "Host", config().mqttHost.c_str(), false);
   addField(card, "Port", port.c_str(), false);
   addField(card, "Username", config().mqttUsername.c_str(), false);
   addField(card, "Password", "", true);
   addField(card, "Topic prefix", config().topicPrefix.c_str(), false);
-  makeAction(col, "Test Connection", false, onTestMqtt, nullptr);
+  makeAction(col, "Test connection", false, onTestMqtt, nullptr);
   makeAction(col, "Save & reboot", true, onSave, nullptr);
 }
 
@@ -872,19 +1003,13 @@ void restyleChoiceRow(lv_obj_t *row) {
     const bool selected = allowed && (value == current);
     if (allowed) {
       lv_obj_clear_state(btn, LV_STATE_DISABLED);
-      lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
     } else {
       lv_obj_add_state(btn, LV_STATE_DISABLED);
-      lv_obj_set_style_bg_opa(btn, LV_OPA_40, 0);
     }
-    styleButton(btn, selected);
-    if (allowed && !selected) {
-      // styleButton resets border for unselected buttons; keep the card border.
-      lv_obj_set_style_border_width(btn, 1, 0);
-    }
+    styleChip(btn, selected, allowed);
     if (lv_obj_t *lbl = lv_obj_get_child(btn, 0)) {
       lv_obj_set_style_text_color(
-          lbl, lv_color_hex(selected ? COL_BG : (allowed ? COL_TEXT : COL_MUTED)), 0);
+          lbl, lv_color_hex(selected ? COL_BG : (allowed ? COL_TEXT : COL_DIM)), 0);
     }
   }
 }
@@ -948,18 +1073,38 @@ void onChoicePicked(lv_event_t *event) {
   }
 }
 
-void addTimeoutRow(lv_obj_t *parent, const char *caption, bool dimRow) {
-  lv_obj_t *cap = lv_label_create(parent);
+void addChoiceCaption(lv_obj_t *parent, const char *caption, const char *hint) {
+  lv_obj_t *wrap = lv_obj_create(parent);
+  lv_obj_remove_style_all(wrap);
+  lv_obj_set_width(wrap, lv_pct(100));
+  lv_obj_set_height(wrap, LV_SIZE_CONTENT);
+  lv_obj_set_flex_flow(wrap, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_style_pad_row(wrap, 1, 0);
+  lv_obj_set_style_pad_top(wrap, 4, 0);
+  lv_obj_clear_flag(wrap, LV_OBJ_FLAG_SCROLLABLE);
+
+  lv_obj_t *cap = lv_label_create(wrap);
   lv_obj_set_style_text_font(cap, &lv_font_montserrat_14, 0);
   lv_obj_set_style_text_color(cap, lv_color_hex(COL_TEXT), 0);
   lv_label_set_text(cap, caption);
 
+  if (hint && hint[0]) {
+    lv_obj_t *h = lv_label_create(wrap);
+    lv_obj_set_style_text_font(h, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(h, lv_color_hex(COL_DIM), 0);
+    lv_label_set_text(h, hint);
+  }
+}
+
+void addTimeoutRow(lv_obj_t *parent, const char *caption, const char *hint, bool dimRow) {
+  addChoiceCaption(parent, caption, hint);
+
   lv_obj_t *row = lv_obj_create(parent);
   lv_obj_remove_style_all(row);
   lv_obj_set_width(row, lv_pct(100));
-  lv_obj_set_height(row, 44);
+  lv_obj_set_height(row, 42);
   lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
-  lv_obj_set_style_pad_column(row, 8, 0);
+  lv_obj_set_style_pad_column(row, 6, 0);
   lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
 
   ChoiceKind kind = dimRow ? CK_DIM_MIN : CK_OFF_MIN;
@@ -975,31 +1120,29 @@ void addTimeoutRow(lv_obj_t *parent, const char *caption, bool dimRow) {
   for (int minutes : kTimeoutChoices) {
     lv_obj_t *btn = lv_btn_create(row);
     lv_obj_set_flex_grow(btn, 1);
-    lv_obj_set_height(btn, 44);
+    lv_obj_set_height(btn, 42);
+    lv_obj_set_style_pad_all(btn, 0, 0);
     lv_obj_set_user_data(btn, reinterpret_cast<void *>(static_cast<intptr_t>(minutes)));
     lv_obj_add_event_cb(btn, onChoicePicked, LV_EVENT_CLICKED,
                         reinterpret_cast<void *>(static_cast<intptr_t>(minutes)));
     lv_obj_t *lbl = lv_label_create(btn);
     lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, 0);
-    lv_label_set_text(lbl, (String(minutes) + " min").c_str());
+    lv_label_set_text(lbl, (String(minutes) + "m").c_str());
     lv_obj_center(lbl);
   }
   restyleChoiceRow(row);
 }
 
-void addChoiceRow(lv_obj_t *parent, const char *caption, const int *values, const char *const *labels,
-                  int count, ChoiceKind kind) {
-  lv_obj_t *cap = lv_label_create(parent);
-  lv_obj_set_style_text_font(cap, &lv_font_montserrat_14, 0);
-  lv_obj_set_style_text_color(cap, lv_color_hex(COL_TEXT), 0);
-  lv_label_set_text(cap, caption);
+void addChoiceRow(lv_obj_t *parent, const char *caption, const char *hint, const int *values,
+                  const char *const *labels, int count, ChoiceKind kind) {
+  addChoiceCaption(parent, caption, hint);
 
   lv_obj_t *row = lv_obj_create(parent);
   lv_obj_remove_style_all(row);
   lv_obj_set_width(row, lv_pct(100));
-  lv_obj_set_height(row, 44);
+  lv_obj_set_height(row, 42);
   lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
-  lv_obj_set_style_pad_column(row, 8, 0);
+  lv_obj_set_style_pad_column(row, 6, 0);
   lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
 
   ChoiceRowCtx *ctx = nullptr;
@@ -1014,7 +1157,8 @@ void addChoiceRow(lv_obj_t *parent, const char *caption, const int *values, cons
   for (int i = 0; i < count; ++i) {
     lv_obj_t *btn = lv_btn_create(row);
     lv_obj_set_flex_grow(btn, 1);
-    lv_obj_set_height(btn, 44);
+    lv_obj_set_height(btn, 42);
+    lv_obj_set_style_pad_all(btn, 0, 0);
     lv_obj_set_user_data(btn, reinterpret_cast<void *>(static_cast<intptr_t>(values[i])));
     lv_obj_add_event_cb(btn, onChoicePicked, LV_EVENT_CLICKED,
                         reinterpret_cast<void *>(static_cast<intptr_t>(values[i])));
@@ -1031,37 +1175,43 @@ void showDisplay() {
   clearContent();
   choiceCtxUsed = 0;
   lv_label_set_text(titleLabel, "Display & Alerts");
-  setStatus("All settings below take effect immediately and persist across reboots.", COL_MUTED);
+  setStatus("Changes apply immediately", COL_MUTED);
 
   lv_obj_t *col = makeScroll();
 
-  addSection(col, "BACKLIGHT & SLEEP");
   lv_obj_t *cardBrt = makeCard(col);
+  addCardHeader(cardBrt, "Backlight", "Brightness while awake and when the panel soft-dims.");
   static constexpr int kFullVals[] = {50, 75, 100};
   static constexpr const char *kFullLbls[] = {"50%", "75%", "100%"};
-  addChoiceRow(cardBrt, "Normal brightness", kFullVals, kFullLbls, 3, CK_FULL_BRIGHT);
+  addChoiceRow(cardBrt, "Awake", "Normal viewing brightness", kFullVals, kFullLbls, 3,
+               CK_FULL_BRIGHT);
 
   static constexpr int kDimVals[] = {10, 20, 35};
   static constexpr const char *kDimLbls[] = {"10%", "20%", "35%"};
-  addChoiceRow(cardBrt, "Dimmed brightness", kDimVals, kDimLbls, 3, CK_DIM_BRIGHT);
+  addChoiceRow(cardBrt, "Dimmed", "After idle, before the screen turns off", kDimVals, kDimLbls, 3,
+               CK_DIM_BRIGHT);
 
-  addTimeoutRow(cardBrt, "Dim after", true);
-  addTimeoutRow(cardBrt, "Turn off after", false);
+  lv_obj_t *cardSleep = makeCard(col);
+  addCardHeader(cardSleep, "Sleep timers", "Dim first, then blank the panel to save the backlight.");
+  addTimeoutRow(cardSleep, "Dim after", "Time idle before soft-dim", true);
+  addTimeoutRow(cardSleep, "Turn off after", "Must be longer than dim", false);
 
-  addSection(col, "NAVIGATION & SPOOL WARNINGS");
   lv_obj_t *cardNav = makeCard(col);
+  addCardHeader(cardNav, "Navigation", "Return to AMS View when you walk away from other screens.");
   static constexpr int kIdleVals[] = {0, 60, 180};
   static constexpr const char *kIdleLbls[] = {"Off", "1 min", "3 min"};
-  addChoiceRow(cardNav, "Auto-return to AMS View", kIdleVals, kIdleLbls, 3, CK_IDLE);
+  addChoiceRow(cardNav, "Auto-return", "Inactivity timeout", kIdleVals, kIdleLbls, 3, CK_IDLE);
 
+  lv_obj_t *cardSpool = makeCard(col);
+  addCardHeader(cardSpool, "Spool alerts",
+                "Remaining filament thresholds for amber warning and red critical.");
   static constexpr int kLowVals[] = {20, 30, 40};
   static constexpr const char *kLowLbls[] = {"20%", "30%", "40%"};
-  addChoiceRow(cardNav, "Low spool warning (amber)", kLowVals, kLowLbls, 3, CK_SPOOL_LOW);
+  addChoiceRow(cardSpool, "Low warning", "Amber threshold", kLowVals, kLowLbls, 3, CK_SPOOL_LOW);
 
   static constexpr int kCritVals[] = {10, 15, 20};
   static constexpr const char *kCritLbls[] = {"10%", "15%", "20%"};
-  addChoiceRow(cardNav, "Critical spool alert (red)", kCritVals, kCritLbls, 3, CK_SPOOL_CRIT);
-
+  addChoiceRow(cardSpool, "Critical", "Red alert threshold", kCritVals, kCritLbls, 3, CK_SPOOL_CRIT);
 }
 
 struct TzPreset {
@@ -1094,21 +1244,19 @@ void onTzPresetPicked(lv_event_t *event) {
 void showDevice() {
   pane = Pane::Device;
   clearContent();
-  lv_label_set_text(titleLabel, "Device & Timezone");
-  setStatus("Hostname, timezone preset or custom POSIX TZ, and the OTA / config password.",
-            COL_MUTED);
+  lv_label_set_text(titleLabel, "Device");
+  setStatus("Identity, clock, and admin password", COL_MUTED);
 
   lv_obj_t *col = makeScroll();
   lv_obj_t *card = makeCard(col);
+  addCardHeader(card, "Network identity", "Hostname used for ArduinoOTA on your LAN.");
   addField(card, "Hostname", config().otaHostname.c_str(), false);
-  addField(card, "Timezone (POSIX TZ)", config().displayTimezone.c_str(), false);
 
-  lv_obj_t *tzCap = lv_label_create(card);
-  lv_obj_set_style_text_font(tzCap, &lv_font_montserrat_12, 0);
-  lv_obj_set_style_text_color(tzCap, lv_color_hex(COL_MUTED), 0);
-  lv_label_set_text(tzCap, "Quick timezone presets");
+  lv_obj_t *tzCard = makeCard(col);
+  addCardHeader(tzCard, "Timezone", "Pick a preset or edit the POSIX rule directly.");
+  addField(tzCard, "POSIX TZ rule", config().displayTimezone.c_str(), false);
 
-  lv_obj_t *tzRow = lv_obj_create(card);
+  lv_obj_t *tzRow = lv_obj_create(tzCard);
   lv_obj_remove_style_all(tzRow);
   lv_obj_set_width(tzRow, lv_pct(100));
   lv_obj_set_height(tzRow, LV_SIZE_CONTENT);
@@ -1121,10 +1269,10 @@ void showDevice() {
   for (int i = 0; i < kTzCount; ++i) {
     const bool active = (config().displayTimezone == kTzPresets[i].posix);
     lv_obj_t *btn = lv_btn_create(tzRow);
-    lv_obj_set_height(btn, 38);
+    lv_obj_set_height(btn, 36);
     lv_obj_set_style_pad_hor(btn, 12, 0);
-    styleButton(btn, active);
-    lv_obj_set_style_min_height(btn, 38, 0);
+    styleChip(btn, active, true);
+    lv_obj_set_style_min_height(btn, 36, 0);
     lv_obj_add_event_cb(btn, onTzPresetPicked, LV_EVENT_CLICKED,
                         reinterpret_cast<void *>(static_cast<intptr_t>(i)));
     lv_obj_t *lbl = lv_label_create(btn);
@@ -1134,7 +1282,9 @@ void showDevice() {
     lv_obj_center(lbl);
   }
 
-  addField(card, "OTA / config password", "", true);
+  lv_obj_t *secCard = makeCard(col);
+  addCardHeader(secCard, "Security", "Protects the web console and wireless OTA flashing.");
+  addField(secCard, "Admin / OTA password", "", true);
   makeAction(col, "Save & reboot", true, onSave, nullptr);
 }
 
@@ -1149,8 +1299,10 @@ void runGithubCheck() {
     const int cmp = ota_compare_versions(latestGithubVer, FIRMWARE_VERSION);
     if (cmp > 0) {
       setStatus(String("Update available: v") + latestGithubVer, COL_ACCENT);
+    } else if (cmp < 0) {
+      setStatus(String("Newer than GitHub (you have v") + FIRMWARE_VERSION + ")", COL_MUTED);
     } else {
-      setStatus(String("Up to date (v") + latestGithubVer + ")", COL_MUTED);
+      setStatus(String("Up to date (v") + FIRMWARE_VERSION + ")", COL_MUTED);
     }
   } else {
     setStatus(String("Update check failed: ") + err, COL_DANGER);
@@ -1166,9 +1318,6 @@ void onAutoCheckToggle(lv_event_t *) {
   config().setAutoCheckUpdates(enabled);
   ui_refresh_update_badge();
   if (enabled) {
-    if (autoCheckLabel) {
-      lv_label_set_text(autoCheckLabel, "Automatically check for updates: on");
-    }
     runGithubCheck();
   } else {
     showUpdate();
@@ -1217,38 +1366,67 @@ void showUpdate() {
   const bool hasLatest = latestGithubVer.length() > 0;
   const bool newerAvailable =
       hasLatest && ota_compare_versions(latestGithubVer, FIRMWARE_VERSION) > 0;
+  const bool aheadOfGithub =
+      hasLatest && ota_compare_versions(latestGithubVer, FIRMWARE_VERSION) < 0;
   const bool autoOn = config().autoCheckUpdates;
 
   if (!hasLatest) {
-    setStatus(autoOn ? "Automatic checks enabled - waiting for the next GitHub poll."
-                     : "Check GitHub for the latest firmware release (keeps all saved settings).",
+    setStatus(autoOn ? "Waiting for the next automatic GitHub poll"
+                     : "Tap Check for updates to query GitHub",
               COL_MUTED);
   } else if (newerAvailable) {
     setStatus(String("Update available: v") + latestGithubVer, COL_ACCENT);
+  } else if (aheadOfGithub) {
+    setStatus(String("Newer than GitHub (you have v") + FIRMWARE_VERSION + ")", COL_MUTED);
   } else {
-    setStatus(String("Up to date (v") + latestGithubVer + ")", COL_MUTED);
+    setStatus(String("Up to date (v") + FIRMWARE_VERSION + ")", COL_MUTED);
   }
 
   lv_obj_t *col = makeScroll();
   lv_obj_t *card = makeCard(col);
+  addCardHeader(card, "Versions", "Settings are kept when you install from GitHub.");
 
-  lv_obj_t *curLbl = lv_label_create(card);
-  lv_obj_set_style_text_font(curLbl, &lv_font_montserrat_16, 0);
-  lv_obj_set_style_text_color(curLbl, lv_color_hex(COL_TEXT), 0);
-  lv_label_set_text(curLbl, (String("Installed version:  v") + FIRMWARE_VERSION).c_str());
+  lv_obj_t *verRow = lv_obj_create(card);
+  lv_obj_remove_style_all(verRow);
+  lv_obj_set_width(verRow, lv_pct(100));
+  lv_obj_set_height(verRow, LV_SIZE_CONTENT);
+  lv_obj_set_flex_flow(verRow, LV_FLEX_FLOW_ROW);
+  lv_obj_set_style_pad_column(verRow, 10, 0);
+  lv_obj_clear_flag(verRow, LV_OBJ_FLAG_SCROLLABLE);
 
-  lv_obj_t *latLbl = lv_label_create(card);
-  lv_obj_set_style_text_font(latLbl, &lv_font_montserrat_16, 0);
-  lv_obj_set_style_text_color(
-      latLbl, lv_color_hex(newerAvailable ? COL_ACCENT : (hasLatest ? COL_TEXT : COL_MUTED)), 0);
+  auto addVerCell = [](lv_obj_t *parent, const char *eyebrow, const char *ver, bool highlight) {
+    lv_obj_t *cell = lv_obj_create(parent);
+    lv_obj_remove_style_all(cell);
+    lv_obj_set_flex_grow(cell, 1);
+    lv_obj_set_height(cell, LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_color(cell, lv_color_hex(highlight ? COL_ACCENT_DIM : COL_INSET), 0);
+    lv_obj_set_style_bg_opa(cell, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(cell, kRadiusChip, 0);
+    lv_obj_set_style_border_width(cell, 1, 0);
+    lv_obj_set_style_border_color(cell, lv_color_hex(highlight ? COL_ACCENT : COL_BORDER), 0);
+    lv_obj_set_style_pad_all(cell, 12, 0);
+    lv_obj_set_flex_flow(cell, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(cell, 4, 0);
+    lv_obj_clear_flag(cell, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *e = lv_label_create(cell);
+    lv_obj_set_style_text_font(e, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(e, lv_color_hex(highlight ? COL_ACCENT : COL_MUTED), 0);
+    lv_label_set_text(e, eyebrow);
+
+    lv_obj_t *v = lv_label_create(cell);
+    lv_obj_set_style_text_font(v, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(v, lv_color_hex(COL_TEXT), 0);
+    lv_label_set_text(v, ver);
+  };
+
+  const String installed = String("v") + FIRMWARE_VERSION;
+  addVerCell(verRow, "Installed", installed.c_str(), false);
   if (hasLatest) {
-    String t = String("Latest on GitHub:   v") + latestGithubVer;
-    if (newerAvailable) {
-      t += "  (NEW)";
-    }
-    lv_label_set_text(latLbl, t.c_str());
+    const String remote = String("v") + latestGithubVer;
+    addVerCell(verRow, newerAvailable ? "GitHub (new)" : "GitHub", remote.c_str(), newerAvailable);
   } else {
-    lv_label_set_text(latLbl, "Latest on GitHub:   (tap Check for updates)");
+    addVerCell(verRow, "GitHub", "Not checked", false);
   }
 
   updateProgressBar = lv_bar_create(card);
@@ -1256,33 +1434,31 @@ void showUpdate() {
   lv_obj_set_height(updateProgressBar, 10);
   lv_bar_set_range(updateProgressBar, 0, 100);
   lv_bar_set_value(updateProgressBar, 0, LV_ANIM_OFF);
-  lv_obj_set_style_bg_color(updateProgressBar, lv_color_hex(COL_BG), LV_PART_MAIN);
+  lv_obj_set_style_bg_color(updateProgressBar, lv_color_hex(COL_INSET), LV_PART_MAIN);
   lv_obj_set_style_bg_color(updateProgressBar, lv_color_hex(COL_ACCENT), LV_PART_INDICATOR);
   lv_obj_set_style_radius(updateProgressBar, 5, LV_PART_MAIN);
   lv_obj_set_style_radius(updateProgressBar, 5, LV_PART_INDICATOR);
   lv_obj_add_flag(updateProgressBar, LV_OBJ_FLAG_HIDDEN);
-
-  lv_obj_t *autoBtn = makeAction(col, "", autoOn, onAutoCheckToggle, nullptr);
-  autoCheckLabel = lv_obj_get_child(autoBtn, 0);
-  if (autoCheckLabel) {
-    lv_label_set_text(autoCheckLabel,
-                      autoOn ? "Automatically check for updates: on"
-                             : "Automatically check for updates: off");
-  }
 
   makeAction(col, (String(LV_SYMBOL_REFRESH) + "  Check for updates").c_str(), !hasLatest,
              onCheckUpdates, nullptr);
 
   String installText;
   if (newerAvailable) {
-    installText = String(LV_SYMBOL_DOWNLOAD) + "  Install v" + latestGithubVer + " from GitHub";
+    installText = String(LV_SYMBOL_DOWNLOAD) + "  Install v" + latestGithubVer;
   } else if (hasLatest) {
-    installText = String(LV_SYMBOL_DOWNLOAD) + "  Reinstall v" + latestGithubVer + " from GitHub";
+    installText = String(LV_SYMBOL_DOWNLOAD) + "  Reinstall v" + latestGithubVer;
   } else {
     installText = String(LV_SYMBOL_DOWNLOAD) + "  Install latest from GitHub";
   }
   makeAction(col, installText.c_str(), newerAvailable, onInstallGithubUpdate, nullptr);
 
+  // Auto-check last so primary actions stay above the preference toggle.
+  lv_obj_t *autoBtn = makeToggleAction(col, autoOn, onAutoCheckToggle);
+  autoCheckLabel = lv_obj_get_child(autoBtn, 0);
+  if (autoCheckLabel) {
+    lv_label_set_text(autoCheckLabel, "Automatically check for updates");
+  }
 }
 
 void addStatLine(lv_obj_t *parent, const char *label, const String &val) {
@@ -1291,16 +1467,26 @@ void addStatLine(lv_obj_t *parent, const char *label, const String &val) {
   lv_obj_set_width(row, lv_pct(100));
   lv_obj_set_height(row, LV_SIZE_CONTENT);
   lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
-  lv_obj_set_flex_align(row, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_flex_align(row, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_style_pad_ver(row, 4, 0);
+  lv_obj_set_style_border_side(row, LV_BORDER_SIDE_BOTTOM, 0);
+  lv_obj_set_style_border_width(row, 1, 0);
+  lv_obj_set_style_border_color(row, lv_color_hex(COL_BORDER_SOFT), 0);
+  lv_obj_set_style_pad_bottom(row, 8, 0);
+  lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
 
   lv_obj_t *k = lv_label_create(row);
-  lv_obj_set_style_text_font(k, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_font(k, &lv_font_montserrat_12, 0);
   lv_obj_set_style_text_color(k, lv_color_hex(COL_MUTED), 0);
   lv_label_set_text(k, label);
 
   lv_obj_t *v = lv_label_create(row);
   lv_obj_set_style_text_font(v, &lv_font_montserrat_14, 0);
   lv_obj_set_style_text_color(v, lv_color_hex(COL_TEXT), 0);
+  lv_obj_set_style_text_align(v, LV_TEXT_ALIGN_RIGHT, 0);
+  lv_label_set_long_mode(v, LV_LABEL_LONG_DOT);
+  lv_obj_set_flex_grow(v, 1);
+  lv_obj_set_width(v, 0);
   lv_label_set_text(v, val.c_str());
 }
 
@@ -1343,20 +1529,20 @@ void onFactoryReset(lv_event_t *) {
 void showSystem() {
   pane = Pane::System;
   clearContent();
-  lv_label_set_text(titleLabel, "System & Diagnostics");
-  setStatus("Live hardware, network, and FilaMan telemetry.", COL_MUTED);
+  lv_label_set_text(titleLabel, "System");
+  setStatus("Live diagnostics", COL_MUTED);
 
   lv_obj_t *col = makeScroll();
   lv_obj_t *card = makeCard(col);
+  addCardHeader(card, "Status", "Hardware, network, and data source at a glance.");
 
   addStatLine(card, "Firmware", String("v") + FIRMWARE_VERSION);
   addStatLine(card, "Uptime", formatUptime());
 
   if (WiFi.status() == WL_CONNECTED) {
-    addStatLine(card, "WiFi SSID / RSSI",
-                WiFi.SSID() + "  (" + String(WiFi.RSSI()) + " dBm)");
-    addStatLine(card, "IP / Hostname",
-                WiFi.localIP().toString() + "  (" + config().otaHostname + ".local)");
+    addStatLine(card, "WiFi", WiFi.SSID() + "  (" + String(WiFi.RSSI()) + " dBm)");
+    addStatLine(card, "Address",
+                WiFi.localIP().toString() + "  (" + config().otaHostname + ")");
   } else {
     addStatLine(card, "WiFi", "Disconnected");
   }
@@ -1369,20 +1555,19 @@ void showSystem() {
 
   const uint32_t freeInt = ESP.getFreeHeap() / 1024U;
   const uint32_t freePsram = heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024U;
-  addStatLine(card, "Free RAM / PSRAM",
-              String(freeInt) + " KB internal  |  " + String(freePsram) + " KB PSRAM");
+  addStatLine(card, "Memory",
+              String(freeInt) + " KB RAM  ·  " + String(freePsram) + " KB PSRAM");
 
-  makeAction(col, "Refresh Diagnostics", false, [](lv_event_t *) { showSystem(); }, nullptr);
-  makeAction(col, "Reboot Display", false, onRebootNow, nullptr);
+  makeAction(col, "Refresh", false, [](lv_event_t *) { showSystem(); }, nullptr);
+  makeAction(col, "Reboot display", false, onRebootNow, nullptr);
 
   lv_obj_t *rstBtn = makeAction(
-      col, confirmResetArmed ? "Confirm Factory Reset (Erases NVS)" : "Factory Reset Settings",
-      false, onFactoryReset, nullptr);
+      col, confirmResetArmed ? "Confirm factory reset" : "Factory reset settings", false,
+      onFactoryReset, nullptr);
   lv_obj_set_style_border_color(rstBtn, lv_color_hex(COL_DANGER), 0);
   if (lv_obj_t *lbl = lv_obj_get_child(rstBtn, 0)) {
     lv_obj_set_style_text_color(lbl, lv_color_hex(COL_DANGER), 0);
   }
-
 }
 
 void onCloseClicked(lv_event_t *) { menu_close(); }

@@ -1,17 +1,17 @@
 {
-  "name": "Filaman Digital Swatches",
-  "version": "0.20.23",
+  "name": "Filaman Digital Swatches (CrowPanel)",
+  "version": "0.21.0",
   "new_install_prompt_erase": true,
   "builds": [
     {
       "chipFamily": "ESP32-S3",
       "parts": [
         {
-          "path": "firmware/bootloader.bin",
+          "path": "firmware/bootloader-crowpanel-s3-lcd7.bin",
           "offset": 0
         },
         {
-          "path": "firmware/partitions.bin",
+          "path": "firmware/partitions-crowpanel-s3-lcd7.bin",
           "offset": 32768
         },
         {
@@ -19,7 +19,7 @@
           "offset": 57344
         },
         {
-          "path": "firmware/firmware.bin",
+          "path": "firmware/firmware-crowpanel-s3-lcd7.bin",
           "offset": 65536
         }
       ]
