@@ -45,6 +45,9 @@ struct SlotState {
   String profileBaseName;  // FilaMan profile_base_name / bambu_profile_base_name
   String nozzleMin;
   String nozzleMax;
+  String bedTemp;
+  float densityGcm3 = 0.0f;
+  float diameterMm = 0.0f;
   String remainingGrams;
   String costRemaining;
   String lastUsed;

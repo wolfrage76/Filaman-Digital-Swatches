@@ -447,6 +447,12 @@ bool applySnapshot(JsonDocument &doc) {
       }
       slot.nozzleMin = intStr(s["nozzle_min"]);
       slot.nozzleMax = intStr(s["nozzle_max"]);
+      slot.bedTemp = intStr(s["bed_temp"]);
+      if (!slot.bedTemp.length()) {
+        slot.bedTemp = intStr(s["bed_temperature"]);
+      }
+      slot.densityGcm3 = s["density_g_cm3"].isNull() ? 0.0f : s["density_g_cm3"].as<float>();
+      slot.diameterMm = s["diameter_mm"].isNull() ? 0.0f : s["diameter_mm"].as<float>();
       slot.remainingPercent = remainingPercent;
       slot.remainingGrams = intStr(s["remaining_grams"]);
       slot.costRemaining = empty ? String("") : formatCost(s["remaining_cost"], currency);

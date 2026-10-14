@@ -4,6 +4,7 @@
 #include <lvgl.h>
 
 #include "display_poll.h"
+#include "menu_ui.h"
 #include "printer_list.h"
 #include "touch_input.h"
 
@@ -82,6 +83,11 @@ void onPickClicked(lv_event_t *e) {
 
 void onRefresh(lv_event_t *) { showList(); }
 
+void onBackToMenu(lv_event_t *) {
+  printer_select_close();
+  menu_open();
+}
+
 void showList() {
   lv_obj_clean(content);
   lv_label_set_text(titleLabel, "Monitor Printer");
@@ -113,9 +119,6 @@ void showList() {
   }
 
   makeRowButton(col, String(LV_SYMBOL_REFRESH) + "  Refresh", onRefresh, nullptr);
-  makeRowButton(
-      col, String(LV_SYMBOL_CLOSE) + "  Close",
-      [](lv_event_t *) { printer_select_close(); }, nullptr);
 }
 
 }  // namespace
@@ -135,10 +138,25 @@ void printer_select_begin() {
   lv_obj_t *header = lv_obj_create(overlay);
   lv_obj_remove_style_all(header);
   lv_obj_set_width(header, lv_pct(100));
-  lv_obj_set_height(header, 40);
+  lv_obj_set_height(header, 44);
   lv_obj_set_flex_flow(header, LV_FLEX_FLOW_ROW);
   lv_obj_set_flex_align(header, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
   lv_obj_set_style_pad_column(header, 10, 0);
+
+  lv_obj_t *backBtn = lv_btn_create(header);
+  lv_obj_set_size(backBtn, 48, 40);
+  lv_obj_set_style_bg_color(backBtn, lv_color_hex(COL_SURFACE_2), 0);
+  lv_obj_set_style_border_width(backBtn, 1, 0);
+  lv_obj_set_style_border_color(backBtn, lv_color_hex(COL_BORDER), 0);
+  lv_obj_set_style_radius(backBtn, 8, 0);
+  lv_obj_set_style_shadow_width(backBtn, 0, 0);
+  lv_obj_set_ext_click_area(backBtn, 10);
+  lv_obj_add_event_cb(backBtn, onBackToMenu, LV_EVENT_CLICKED, nullptr);
+  lv_obj_t *backIcon = lv_label_create(backBtn);
+  lv_obj_set_style_text_font(backIcon, &lv_font_montserrat_22, 0);
+  lv_obj_set_style_text_color(backIcon, lv_color_hex(COL_ACCENT), 0);
+  lv_label_set_text(backIcon, LV_SYMBOL_LEFT);
+  lv_obj_center(backIcon);
 
   titleLabel = lv_label_create(header);
   lv_obj_set_style_text_font(titleLabel, &lv_font_montserrat_22, 0);

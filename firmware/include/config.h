@@ -48,7 +48,7 @@
 #define FILAMAN_TLS_INSECURE 1
 #endif
 
-constexpr const char *FIRMWARE_VERSION = "0.20.20";
+constexpr const char *FIRMWARE_VERSION = "0.20.21";
 constexpr int MQTT_SCHEMA_VERSION = 2;
 
 #ifndef OTA_HOSTNAME

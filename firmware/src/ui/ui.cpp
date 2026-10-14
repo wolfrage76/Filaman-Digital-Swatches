@@ -49,12 +49,19 @@ struct ColumnWidgets {
   lv_obj_t *railFrost = nullptr;
   lv_obj_t *railHighlight = nullptr;
   lv_obj_t *railOverlay = nullptr;
+  lv_obj_t *railBadge = nullptr;
+  lv_obj_t *railBadgeLabel = nullptr;
+  lv_obj_t *railEffectBadge = nullptr;
+  lv_obj_t *railEffectLabel = nullptr;
   lv_obj_t *title = nullptr;
+  lv_obj_t *statusPill = nullptr;
+  lv_obj_t *materialPill = nullptr;
   lv_obj_t *colorName = nullptr;
   lv_obj_t *manufacturer = nullptr;
   lv_obj_t *material = nullptr;
   lv_obj_t *profileName = nullptr;
   lv_obj_t *temps = nullptr;
+  lv_obj_t *bedTemp = nullptr;
   lv_obj_t *remainingBar = nullptr;
   lv_obj_t *remaining = nullptr;
   lv_obj_t *cost = nullptr;
@@ -683,9 +690,22 @@ void applyColorSwatch(lv_obj_t *swatch, lv_obj_t **fillOut, lv_obj_t **frostOut,
   }
 
   if (useFinish == SwatchFinish::Translucent) {
+    lv_obj_set_style_bg_color(highlight, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_bg_opa(highlight, LV_OPA_40, 0);
     lv_obj_clear_flag(frost, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(highlight, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_foreground(frost);
+    lv_obj_move_foreground(highlight);
+    if (overlayOut && *overlayOut && !lv_obj_has_flag(*overlayOut, LV_OBJ_FLAG_HIDDEN)) {
+      lv_obj_move_foreground(*overlayOut);
+    }
+  } else if (useFinish == SwatchFinish::Glow) {
+    // A phosphor wash and bright inner frame remain legible on both light and
+    // dark filament colors without the expensive wide LVGL outline pass.
+    lv_obj_add_flag(frost, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_style_bg_color(highlight, lv_color_hex(0xB8FF63), 0);
+    lv_obj_set_style_bg_opa(highlight, LV_OPA_30, 0);
+    lv_obj_clear_flag(highlight, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_foreground(highlight);
     if (overlayOut && *overlayOut && !lv_obj_has_flag(*overlayOut, LV_OBJ_FLAG_HIDDEN)) {
       lv_obj_move_foreground(*overlayOut);
@@ -696,11 +716,9 @@ void applyColorSwatch(lv_obj_t *swatch, lv_obj_t **fillOut, lv_obj_t **frostOut,
   }
 
   if (useFinish == SwatchFinish::Glow) {
-    // Square 1 px border instead of the 4 px glow outline: the outline is an
-    // extra masked draw pass on every scrolling bay, the border is not.
-    lv_obj_set_style_border_width(swatch, 1, 0);
-    lv_obj_set_style_border_color(swatch, lv_color_hex(0x000000), 0);
-    lv_obj_set_style_border_opa(swatch, LV_OPA_70, 0);
+    lv_obj_set_style_border_width(swatch, 2, 0);
+    lv_obj_set_style_border_color(swatch, lv_color_hex(0xB8FF63), 0);
+    lv_obj_set_style_border_opa(swatch, LV_OPA_COVER, 0);
     lv_obj_set_style_outline_width(swatch, 0, 0);
   } else {
     lv_obj_set_style_outline_width(swatch, 0, 0);
@@ -788,7 +806,47 @@ String slotTitleForColumn(int column) {
   if (!isHtPage()) {
     return "SLOT " + String(column + 1);
   }
-  return "HT " + String(column + 1);
+  return "HT UNIT " + String(column + 1);
+}
+
+String slotBadgeForColumn(int column) {
+  if (!isHtPage()) {
+    const int ams = amsIdForPage();
+    const char letter = (ams >= 0 && ams < 26) ? static_cast<char>('A' + ams) : 'A';
+    return String(letter) + String(column + 1);
+  }
+  return "HT" + String(column + 1);
+}
+
+String slotEffectText(const SlotState &slot) {
+  if (slot.empty) {
+    return "";
+  }
+  String text;
+  auto append = [&](const char *value) {
+    if (text.length()) {
+      text += "\n";
+    }
+    text += value;
+  };
+  if (slot.finish == SwatchFinish::Glow) {
+    append("GLOW");
+  } else if (slot.finish == SwatchFinish::Translucent) {
+    append("TRANS");
+  }
+  if (slot.sparkle == SwatchSparkle::Galaxy) {
+    append("GALAXY");
+  } else if (slot.sparkle == SwatchSparkle::Sparkle) {
+    append("SPARKLE");
+  } else if (slot.sparkle == SwatchSparkle::Glitter) {
+    append("GLITTER");
+  }
+  if (slot.fiber == SwatchFiber::Cf) {
+    append("CF");
+  } else if (slot.fiber == SwatchFiber::Gf) {
+    append("GF");
+  }
+  return text;
 }
 
 SlotState &visibleSlot(int column) {
@@ -1012,6 +1070,22 @@ uint32_t remainingBarColor(int percent) {
     return COL_WARN;
   }
   return COL_ACCENT;
+}
+
+int remainingLengthMeters(const SlotState &slot) {
+  if (slot.densityGcm3 <= 0.0f || slot.diameterMm <= 0.0f || !slot.remainingGrams.length()) {
+    return -1;
+  }
+  const float grams = slot.remainingGrams.toFloat();
+  if (grams < 0.0f) {
+    return -1;
+  }
+  // Volume = mass / density; divide by circular filament cross-section.
+  // With grams, g/cm3, and diameter in mm, this simplifies directly to metres.
+  constexpr float PI_F = 3.14159265f;
+  const float metres =
+      (4.0f * grams) / (PI_F * slot.densityGcm3 * slot.diameterMm * slot.diameterMm);
+  return metres >= 0.0f ? static_cast<int>(metres + 0.5f) : -1;
 }
 
 void ensureDefaults() {
@@ -1432,23 +1506,68 @@ void refreshColumn(int column) {
   ColumnWidgets &widgets = columns[column];
 
   setLabelIfChanged(widgets.title, slotTitleForColumn(column));
+  setTextColorIfChanged(widgets.title, slot.active ? COL_ACCENT : COL_MUTED);
+  setLabelIfChanged(widgets.railBadgeLabel, slotBadgeForColumn(column));
+
   const uint32_t railColor = slot.colorCount > 0 ? slot.colors[0] : parseColor(slot.color);
   applyColorSwatch(widgets.colorRail, &widgets.railFill, &widgets.railFrost, &widgets.railHighlight,
                    &widgets.railOverlay, &widgets.paint, widgets.railSig, slot.colors, slot.colorCount,
                    slot.colorStyle, slot.finish, slot.sparkle, slot.fiber,
-                   slot.empty ? 0x333333 : railColor, slot.empty);
+                   slot.empty ? 0x161E29 : railColor, slot.empty);
+  if (slot.finish != SwatchFinish::Glow) {
+    // applyColorSwatch owns this object's border for glow and clears it for
+    // other finishes, so restore the normal frame directly after each apply.
+    lv_obj_set_style_border_width(widgets.colorRail, 1, 0);
+    lv_obj_set_style_border_color(
+        widgets.colorRail,
+        lv_color_hex(slot.empty ? COL_BORDER_SOFT : (slot.active ? COL_ACCENT : COL_BORDER)), 0);
+    lv_obj_set_style_border_opa(widgets.colorRail, LV_OPA_COVER, 0);
+  }
+  if (widgets.railBadge) {
+    lv_obj_move_foreground(widgets.railBadge);
+  }
+  const String effectText = slotEffectText(slot);
+  setHiddenIfChanged(widgets.railEffectBadge, effectText.length() == 0);
+  if (effectText.length()) {
+    setLabelIfChanged(widgets.railEffectLabel, effectText);
+    lv_obj_move_foreground(widgets.railEffectBadge);
+  }
 
-  String colorName = slot.empty ? "Empty" : slot.colorName;
+  String colorName = slot.empty ? "Empty Slot" : slot.colorName;
   if (!colorName.length() && !slot.empty) {
-    colorName = "Unknown";
+    colorName = "Unnamed Filament";
   }
   setLabelIfChanged(widgets.colorName, colorName);
+  setTextColorIfChanged(widgets.colorName, slot.empty ? COL_DIM : COL_TEXT);
+
+  String profileText;
+  if (slot.empty) {
+    profileText = "No filament spool loaded";
+  } else if (slot.profileBaseName.length() > 0) {
+    profileText = slot.profileBaseName;
+  } else if (slot.manufacturer.length() || slot.material.length()) {
+    profileText = slot.manufacturer;
+    if (slot.material.length()) {
+      if (profileText.length()) {
+        profileText += " ";
+      }
+      profileText += slot.material;
+    }
+    profileText += " Profile";
+  } else {
+    profileText = "Standard Filament Profile";
+  }
+  setHiddenIfChanged(widgets.profileName, false);
+  setLabelIfChanged(widgets.profileName, profileText);
+  setTextColorIfChanged(widgets.profileName, slot.empty ? COL_DIM : COL_MUTED);
+
   setLabelIfChanged(widgets.manufacturer, slot.empty ? String("--") : dashOr(slot.manufacturer));
-  setLabelIfChanged(widgets.material, slot.empty ? String("--") : dashOr(slot.material));
-  const bool showProfile = !slot.empty && slot.profileBaseName.length() > 0;
-  setHiddenIfChanged(widgets.profileName, !showProfile);
-  if (showProfile) {
-    setLabelIfChanged(widgets.profileName, slot.profileBaseName);
+  setTextColorIfChanged(widgets.manufacturer, slot.empty ? COL_DIM : COL_TEXT);
+
+  const bool hasMat = !slot.empty && slot.material.length() > 0;
+  setHiddenIfChanged(widgets.materialPill, !hasMat);
+  if (hasMat) {
+    setLabelIfChanged(widgets.material, slot.material);
   }
 
   String temps;
@@ -1461,53 +1580,77 @@ void refreshColumn(int column) {
     temps = "--";
   }
   setLabelIfChanged(widgets.temps, temps);
+  setTextColorIfChanged(widgets.temps, slot.empty ? COL_DIM : COL_TEXT);
+
+  String bed = (!slot.empty && slot.bedTemp.length()) ? slot.bedTemp + " C" : String("--");
+  setLabelIfChanged(widgets.bedTemp, bed);
+  setTextColorIfChanged(widgets.bedTemp, slot.empty ? COL_DIM : COL_TEXT);
 
   if (slot.empty) {
     setBarValueIfChanged(widgets.remainingBar, 0);
-    setBgOpaIfChanged(widgets.colorRail, LV_OPA_40);
-    setLabelIfChanged(widgets.remaining, String(""));
-    setLabelIfChanged(widgets.cost, String(""));
-    setLabelIfChanged(widgets.meta, String(""));
+    setBgOpaIfChanged(widgets.colorRail, LV_OPA_60);
+    setLabelIfChanged(widgets.remaining, String("--"));
+    setTextColorIfChanged(widgets.remaining, COL_DIM);
+
+    setLabelIfChanged(widgets.meta, String("EMPTY"));
+    setTextColorIfChanged(widgets.meta, COL_DIM);
+    setBgColorIfChanged(widgets.statusPill, 0x10151D);
+    setBorderColorIfChanged(widgets.statusPill, COL_BORDER_SOFT);
   } else {
     setBgOpaIfChanged(widgets.colorRail, LV_OPA_COVER);
     int fill = slot.remainingPercent >= 0 ? slot.remainingPercent : 0;
     setBarValueIfChanged(widgets.remainingBar, fill);
-    setIndicatorColorIfChanged(widgets.remainingBar, remainingBarColor(slot.remainingPercent));
+    const uint32_t barCol = remainingBarColor(slot.remainingPercent);
+    setIndicatorColorIfChanged(widgets.remainingBar, barCol);
 
-    const String rem = remainingBothText(slot.remainingPercent, slot.remainingGrams);
+    String rem;
+    if (slot.remainingPercent >= 0) {
+      rem += String(slot.remainingPercent) + "%";
+    }
+    const int grams = slot.remainingGrams.length() ? slot.remainingGrams.toInt() : -1;
+    if (grams >= 0) {
+      if (rem.length()) {
+        rem += "  (";
+        rem += String(grams) + "g)";
+      } else {
+        rem += String(grams) + "g";
+      }
+    }
+    const int metres = remainingLengthMeters(slot);
+    if (metres >= 0) {
+      if (rem.length()) {
+        rem += "  |  ";
+      }
+      rem += "~" + String(metres) + "m";
+    }
     setLabelIfChanged(widgets.remaining, rem.length() ? rem : String("--"));
+    const uint32_t remTextCol =
+        (slot.remainingPercent >= 0 && slot.remainingPercent < config().spoolLowPct) ? barCol
+                                                                                     : COL_TEXT;
+    setTextColorIfChanged(widgets.remaining, remTextCol);
 
-    if (slot.costRemaining.length()) {
-      String cost = slot.costRemaining;
-      const char lead = cost.charAt(0);
-      if (lead >= '0' && lead <= '9') {
-        cost = "$" + cost;
-      }
-      setLabelIfChanged(widgets.cost, cost);
+    // Status pill: ACTIVE > Backup badge > RFID / MANUAL
+    if (slot.active) {
+      setLabelIfChanged(widgets.meta, String("ACTIVE"));
+      setTextColorIfChanged(widgets.meta, COL_ACCENT);
+      setBgColorIfChanged(widgets.statusPill, 0x112E22);
+      setBorderColorIfChanged(widgets.statusPill, COL_ACCENT);
+    } else if (slot.backupBadge.length()) {
+      setLabelIfChanged(widgets.meta, slot.backupBadge);
+      setTextColorIfChanged(widgets.meta, 0x7CC4FA);
+      setBgColorIfChanged(widgets.statusPill, 0x132436);
+      setBorderColorIfChanged(widgets.statusPill, 0x284B6E);
+    } else if (slot.rfid) {
+      setLabelIfChanged(widgets.meta, String("RFID"));
+      setTextColorIfChanged(widgets.meta, COL_MUTED);
+      setBgColorIfChanged(widgets.statusPill, COL_SURFACE_2);
+      setBorderColorIfChanged(widgets.statusPill, COL_BORDER);
     } else {
-      setLabelIfChanged(widgets.cost, String(""));
+      setLabelIfChanged(widgets.meta, String("MANUAL"));
+      setTextColorIfChanged(widgets.meta, COL_DIM);
+      setBgColorIfChanged(widgets.statusPill, 0x131922);
+      setBorderColorIfChanged(widgets.statusPill, COL_BORDER_SOFT);
     }
-
-    String meta;
-    if (slot.remainingSource.length()) {
-      meta += slot.remainingSource;
-    }
-    if (slot.backupBadge.length()) {
-      if (meta.length()) {
-        meta += " | ";
-      }
-      meta += slot.backupBadge;
-    }
-    if (slot.lastUsed.length()) {
-      if (meta.length()) {
-        meta += " | ";
-      }
-      meta += slot.lastUsed;
-    }
-    if (!meta.length()) {
-      meta = slot.rfid ? "RFID" : "No RFID";
-    }
-    setLabelIfChanged(widgets.meta, meta);
   }
 
   if (slot.active) {
@@ -2057,6 +2200,8 @@ void refreshStatusPage() {
   refreshStatusQueue();
 }
 
+void layoutDetailColumns();
+
 void refreshPage() {
   refreshHeader();
   lv_timer_handler();
@@ -2093,8 +2238,9 @@ void refreshPage() {
       lv_timer_handler();
     }
   } else if (detail) {
-    // AMS 2 Pro always has 4 slots; the HT page shows one column per connected
-    // AMS-HT unit (grouped up to AMSHT_MAX_COUNT per HT button).
+    // AMS 2 Pro always has 4 slots in a 2x2 grid; the HT page shows one column
+    // per connected AMS-HT unit (grouped up to AMSHT_MAX_COUNT per HT button).
+    layoutDetailColumns();
     const int visibleColumns = isHtPage() ? htPresentCount() : COLUMNS_PER_PAGE;
     for (int column = 0; column < COLUMNS_PER_PAGE; ++column) {
       const bool show = column < visibleColumns;
@@ -2186,6 +2332,9 @@ void gotoPage(int page) {
   setHiddenIfChanged(overviewRoot, !overview);
   setHiddenIfChanged(columnsRoot, !detail);
   setHiddenIfChanged(alertsRoot, !alerts);
+  if (detail) {
+    layoutDetailColumns();
+  }
 
   // Repaint the body incrementally across loop ticks via the staged apply path
   // (one group per tick) instead of one synchronous ~200 ms refreshPage(). That
@@ -2194,72 +2343,326 @@ void gotoPage(int page) {
   dataDirty = false;
 }
 
+void layoutDetailColumns() {
+  if (!columnsRoot) {
+    return;
+  }
+  // 2x2 slot grid for AMS units and 3-4 HT units. One or two HT units use a
+  // full-height row. At two columns, 392px cards fill the 792px inner width.
+  const bool ht = isHtPage();
+  const int htCount = ht ? htPresentCount() : COLUMNS_PER_PAGE;
+  const bool singleHt = ht && htCount == 1;
+  const bool oneHtRow = ht && htCount <= 2;
+  const int colGap = 8;
+  const int fullW = SCREEN_WIDTH - 8;
+  const int cardW = singleHt ? fullW : (fullW - colGap) / 2;
+
+  lv_obj_set_flex_flow(columnsRoot, LV_FLEX_FLOW_ROW_WRAP);
+  lv_obj_set_style_pad_column(columnsRoot, colGap, 0);
+  lv_obj_set_style_pad_row(columnsRoot, 8, 0);
+  lv_obj_set_flex_align(columnsRoot, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_START,
+                        LV_FLEX_ALIGN_SPACE_BETWEEN);
+  for (int i = 0; i < COLUMNS_PER_PAGE; ++i) {
+    if (!columns[i].root) {
+      continue;
+    }
+    lv_obj_set_flex_grow(columns[i].root, 0);
+    lv_obj_set_width(columns[i].root, cardW);
+    lv_obj_set_height(columns[i].root, lv_pct(oneHtRow ? 100 : 48));
+  }
+}
+
 void buildColumn(lv_obj_t *parent, int index) {
   ColumnWidgets &widgets = columns[index];
   widgets.root = lv_obj_create(parent);
   lv_obj_add_style(widgets.root, &columnStyle, 0);
   lv_obj_set_flex_flow(widgets.root, LV_FLEX_FLOW_ROW);
-  lv_obj_set_style_pad_all(widgets.root, 0, 0);
-  lv_obj_set_style_pad_column(widgets.root, 0, 0);
-  lv_obj_set_flex_grow(widgets.root, 1);
-  lv_obj_set_height(widgets.root, lv_pct(100));
+  lv_obj_set_flex_align(widgets.root, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER,
+                        LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_style_pad_all(widgets.root, 8, 0);
+  lv_obj_set_style_pad_column(widgets.root, 12, 0);
+  lv_obj_set_flex_grow(widgets.root, 0);
+  lv_obj_set_width(widgets.root, (SCREEN_WIDTH - 8 - 8) / 2);
+  lv_obj_set_height(widgets.root, lv_pct(48));
   lv_obj_clear_flag(widgets.root, LV_OBJ_FLAG_SCROLLABLE);
 
+  // Wide filament swatch column on the left of the card
   widgets.colorRail = lv_obj_create(widgets.root);
   lv_obj_remove_style_all(widgets.colorRail);
-  lv_obj_set_width(widgets.colorRail, 10);
+  lv_obj_set_width(widgets.colorRail, 68);
   lv_obj_set_height(widgets.colorRail, lv_pct(100));
   lv_obj_set_style_bg_opa(widgets.colorRail, LV_OPA_COVER, 0);
-  lv_obj_set_style_bg_color(widgets.colorRail, lv_color_hex(0x333333), 0);
+  lv_obj_set_style_bg_color(widgets.colorRail, lv_color_hex(0x161E29), 0);
+  lv_obj_set_style_border_width(widgets.colorRail, 1, 0);
+  lv_obj_set_style_border_color(widgets.colorRail, lv_color_hex(COL_BORDER_SOFT), 0);
   lv_obj_set_style_radius(widgets.colorRail, 0, 0);
+  lv_obj_clear_flag(widgets.colorRail, LV_OBJ_FLAG_SCROLLABLE);
 
+  // Floating bay code pill anchored at top-left of the swatch column (e.g. A1..A4)
+  widgets.railBadge = lv_obj_create(widgets.colorRail);
+  lv_obj_remove_style_all(widgets.railBadge);
+  lv_obj_add_flag(widgets.railBadge, LV_OBJ_FLAG_FLOATING);
+  lv_obj_set_pos(widgets.railBadge, 5, 5);
+  lv_obj_set_size(widgets.railBadge, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+  lv_obj_set_style_bg_color(widgets.railBadge, lv_color_hex(0x0A0E14), 0);
+  lv_obj_set_style_bg_opa(widgets.railBadge, LV_OPA_80, 0);
+  lv_obj_set_style_border_width(widgets.railBadge, 1, 0);
+  lv_obj_set_style_border_color(widgets.railBadge, lv_color_hex(0x2A3748), 0);
+  lv_obj_set_style_radius(widgets.railBadge, 4, 0);
+  lv_obj_set_style_pad_hor(widgets.railBadge, 6, 0);
+  lv_obj_set_style_pad_ver(widgets.railBadge, 2, 0);
+  lv_obj_clear_flag(widgets.railBadge, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_clear_flag(widgets.railBadge, LV_OBJ_FLAG_CLICKABLE);
+
+  widgets.railBadgeLabel = lv_label_create(widgets.railBadge);
+  lv_obj_set_style_text_font(widgets.railBadgeLabel, &lv_font_montserrat_12, 0);
+  lv_obj_set_style_text_color(widgets.railBadgeLabel, lv_color_hex(COL_TEXT), 0);
+  lv_label_set_text(widgets.railBadgeLabel, "A1");
+
+  // Finish/additive legend over the visual treatment. Multiple properties
+  // stack vertically (for example GLOW + CF) without consuming body space.
+  widgets.railEffectBadge = lv_obj_create(widgets.colorRail);
+  lv_obj_remove_style_all(widgets.railEffectBadge);
+  lv_obj_add_flag(widgets.railEffectBadge, LV_OBJ_FLAG_FLOATING | LV_OBJ_FLAG_HIDDEN);
+  lv_obj_set_width(widgets.railEffectBadge, 58);
+  lv_obj_set_height(widgets.railEffectBadge, LV_SIZE_CONTENT);
+  lv_obj_align(widgets.railEffectBadge, LV_ALIGN_BOTTOM_MID, 0, -5);
+  lv_obj_set_style_bg_color(widgets.railEffectBadge, lv_color_hex(0x070A0F), 0);
+  lv_obj_set_style_bg_opa(widgets.railEffectBadge, LV_OPA_80, 0);
+  lv_obj_set_style_border_width(widgets.railEffectBadge, 1, 0);
+  lv_obj_set_style_border_color(widgets.railEffectBadge, lv_color_hex(0x42536A), 0);
+  lv_obj_set_style_radius(widgets.railEffectBadge, 4, 0);
+  lv_obj_set_style_pad_hor(widgets.railEffectBadge, 3, 0);
+  lv_obj_set_style_pad_ver(widgets.railEffectBadge, 2, 0);
+  lv_obj_clear_flag(widgets.railEffectBadge, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+
+  widgets.railEffectLabel = lv_label_create(widgets.railEffectBadge);
+  lv_obj_set_width(widgets.railEffectLabel, lv_pct(100));
+  lv_obj_set_style_text_font(widgets.railEffectLabel, &lv_font_montserrat_12, 0);
+  lv_obj_set_style_text_color(widgets.railEffectLabel, lv_color_hex(COL_TEXT), 0);
+  lv_obj_set_style_text_align(widgets.railEffectLabel, LV_TEXT_ALIGN_CENTER, 0);
+  lv_label_set_long_mode(widgets.railEffectLabel, LV_LABEL_LONG_WRAP);
+  lv_label_set_text(widgets.railEffectLabel, "");
+
+  // Right structured telemetry & identity body
   lv_obj_t *body = lv_obj_create(widgets.root);
   lv_obj_remove_style_all(body);
   lv_obj_set_flex_grow(body, 1);
   lv_obj_set_height(body, lv_pct(100));
   lv_obj_set_flex_flow(body, LV_FLEX_FLOW_COLUMN);
-  lv_obj_set_flex_align(body, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-  lv_obj_set_style_pad_all(body, 12, 0);
-  lv_obj_set_style_pad_row(body, 5, 0);
+  lv_obj_set_flex_align(body, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_START,
+                        LV_FLEX_ALIGN_START);
+  lv_obj_set_style_pad_all(body, 2, 0);
+  lv_obj_set_style_pad_row(body, 2, 0);
   lv_obj_clear_flag(body, LV_OBJ_FLAG_SCROLLABLE);
 
-  widgets.title = makeLabel(body, &lv_font_montserrat_12, lv_color_hex(COL_DIM));
-  lv_obj_set_style_text_align(widgets.title, LV_TEXT_ALIGN_CENTER, 0);
+  // 1. Top Header Bar: Slot Eyebrow (left) + Status & Material Badges (right)
+  lv_obj_t *topRow = lv_obj_create(body);
+  lv_obj_remove_style_all(topRow);
+  lv_obj_set_width(topRow, lv_pct(100));
+  lv_obj_set_height(topRow, 22);
+  lv_obj_set_flex_flow(topRow, LV_FLEX_FLOW_ROW);
+  lv_obj_set_flex_align(topRow, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER,
+                        LV_FLEX_ALIGN_CENTER);
+  lv_obj_clear_flag(topRow, LV_OBJ_FLAG_SCROLLABLE);
 
-  widgets.colorName = makeLabel(body, &lv_font_montserrat_18, lv_color_hex(COL_TEXT));
-  lv_label_set_long_mode(widgets.colorName, LV_LABEL_LONG_WRAP);
+  widgets.title = lv_label_create(topRow);
+  lv_obj_set_style_text_font(widgets.title, &lv_font_montserrat_12, 0);
+  lv_obj_set_style_text_color(widgets.title, lv_color_hex(COL_MUTED), 0);
+  lv_label_set_text(widgets.title, "SLOT 1");
+
+  lv_obj_t *badgeRow = lv_obj_create(topRow);
+  lv_obj_remove_style_all(badgeRow);
+  lv_obj_set_size(badgeRow, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+  lv_obj_set_flex_flow(badgeRow, LV_FLEX_FLOW_ROW);
+  lv_obj_set_flex_align(badgeRow, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_style_pad_column(badgeRow, 5, 0);
+  lv_obj_clear_flag(badgeRow, LV_OBJ_FLAG_SCROLLABLE);
+
+  widgets.statusPill = lv_obj_create(badgeRow);
+  lv_obj_remove_style_all(widgets.statusPill);
+  lv_obj_set_size(widgets.statusPill, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+  lv_obj_set_style_bg_color(widgets.statusPill, lv_color_hex(COL_SURFACE_2), 0);
+  lv_obj_set_style_bg_opa(widgets.statusPill, LV_OPA_COVER, 0);
+  lv_obj_set_style_border_width(widgets.statusPill, 1, 0);
+  lv_obj_set_style_border_color(widgets.statusPill, lv_color_hex(COL_BORDER), 0);
+  lv_obj_set_style_radius(widgets.statusPill, 4, 0);
+  lv_obj_set_style_pad_hor(widgets.statusPill, 6, 0);
+  lv_obj_set_style_pad_ver(widgets.statusPill, 2, 0);
+  lv_obj_clear_flag(widgets.statusPill, LV_OBJ_FLAG_SCROLLABLE);
+
+  widgets.meta = lv_label_create(widgets.statusPill);
+  lv_obj_set_style_text_font(widgets.meta, &lv_font_montserrat_12, 0);
+  lv_obj_set_style_text_color(widgets.meta, lv_color_hex(COL_MUTED), 0);
+  lv_label_set_text(widgets.meta, "RFID");
+
+  widgets.materialPill = lv_obj_create(badgeRow);
+  lv_obj_remove_style_all(widgets.materialPill);
+  lv_obj_set_size(widgets.materialPill, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+  lv_obj_set_style_bg_color(widgets.materialPill, lv_color_hex(0x132624), 0);
+  lv_obj_set_style_bg_opa(widgets.materialPill, LV_OPA_COVER, 0);
+  lv_obj_set_style_border_width(widgets.materialPill, 1, 0);
+  lv_obj_set_style_border_color(widgets.materialPill, lv_color_hex(0x264D44), 0);
+  lv_obj_set_style_radius(widgets.materialPill, 4, 0);
+  lv_obj_set_style_pad_hor(widgets.materialPill, 7, 0);
+  lv_obj_set_style_pad_ver(widgets.materialPill, 2, 0);
+  lv_obj_clear_flag(widgets.materialPill, LV_OBJ_FLAG_SCROLLABLE);
+
+  widgets.material = lv_label_create(widgets.materialPill);
+  lv_obj_set_style_text_font(widgets.material, &lv_font_montserrat_12, 0);
+  lv_obj_set_style_text_color(widgets.material, lv_color_hex(COL_ACCENT), 0);
+  lv_label_set_text(widgets.material, "PLA");
+
+  // 2. Primary Filament Identity Block: Color Name + Profile Base Name
+  lv_obj_t *identityBox = lv_obj_create(body);
+  lv_obj_remove_style_all(identityBox);
+  lv_obj_set_width(identityBox, lv_pct(100));
+  lv_obj_set_height(identityBox, LV_SIZE_CONTENT);
+  lv_obj_set_flex_flow(identityBox, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_flex_align(identityBox, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START,
+                        LV_FLEX_ALIGN_START);
+  lv_obj_set_style_pad_row(identityBox, 2, 0);
+  lv_obj_clear_flag(identityBox, LV_OBJ_FLAG_SCROLLABLE);
+
+  widgets.colorName = makeLabel(identityBox, &lv_font_montserrat_18, lv_color_hex(COL_TEXT));
+  lv_label_set_long_mode(widgets.colorName, LV_LABEL_LONG_DOT);
   lv_obj_set_width(widgets.colorName, lv_pct(100));
-  lv_obj_set_style_max_height(widgets.colorName, 44, 0);
-  widgets.manufacturer = makeLabel(body, &lv_font_montserrat_12, lv_color_hex(COL_MUTED));
-  widgets.material = makeLabel(body, &lv_font_montserrat_22, lv_color_hex(COL_TEXT));
-  widgets.profileName = makeLabel(body, &lv_font_montserrat_12, lv_color_hex(COL_MUTED));
+  lv_obj_set_style_text_align(widgets.colorName, LV_TEXT_ALIGN_LEFT, 0);
+
+  widgets.profileName = makeLabel(identityBox, &lv_font_montserrat_12, lv_color_hex(COL_MUTED));
   lv_label_set_long_mode(widgets.profileName, LV_LABEL_LONG_DOT);
   lv_obj_set_width(widgets.profileName, lv_pct(100));
-  lv_obj_add_flag(widgets.profileName, LV_OBJ_FLAG_HIDDEN);
-  widgets.temps = makeLabel(body, &lv_font_montserrat_12, lv_color_hex(COL_MUTED));
+  lv_obj_set_style_text_align(widgets.profileName, LV_TEXT_ALIGN_LEFT, 0);
 
-  widgets.remainingBar = lv_bar_create(body);
+  // 3. Structured Spec Strip: three compact instrument-style columns.
+  lv_obj_t *specRow = lv_obj_create(body);
+  lv_obj_remove_style_all(specRow);
+  lv_obj_set_width(specRow, lv_pct(100));
+  lv_obj_set_height(specRow, 38);
+  lv_obj_set_style_bg_color(specRow, lv_color_hex(0x0D1219), 0);
+  lv_obj_set_style_bg_opa(specRow, LV_OPA_COVER, 0);
+  lv_obj_set_style_border_width(specRow, 1, 0);
+  lv_obj_set_style_border_color(specRow, lv_color_hex(COL_BORDER_SOFT), 0);
+  lv_obj_set_style_radius(specRow, 4, 0);
+  lv_obj_set_style_pad_hor(specRow, 7, 0);
+  lv_obj_set_style_pad_ver(specRow, 3, 0);
+  lv_obj_set_style_pad_column(specRow, 5, 0);
+  lv_obj_set_flex_flow(specRow, LV_FLEX_FLOW_ROW);
+  lv_obj_set_flex_align(specRow, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER,
+                        LV_FLEX_ALIGN_CENTER);
+  lv_obj_clear_flag(specRow, LV_OBJ_FLAG_SCROLLABLE);
+
+  lv_obj_t *brandBox = lv_obj_create(specRow);
+  lv_obj_remove_style_all(brandBox);
+  lv_obj_set_width(brandBox, 0);
+  lv_obj_set_height(brandBox, lv_pct(100));
+  lv_obj_set_flex_grow(brandBox, 1);
+  lv_obj_set_flex_flow(brandBox, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_flex_align(brandBox, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+  lv_obj_clear_flag(brandBox, LV_OBJ_FLAG_SCROLLABLE);
+
+  lv_obj_t *brandKey = lv_label_create(brandBox);
+  lv_obj_set_style_text_font(brandKey, &lv_font_montserrat_12, 0);
+  lv_obj_set_style_text_color(brandKey, lv_color_hex(COL_DIM), 0);
+  lv_label_set_text(brandKey, "BRAND");
+
+  widgets.manufacturer = lv_label_create(brandBox);
+  lv_obj_set_style_text_font(widgets.manufacturer, &lv_font_montserrat_12, 0);
+  lv_obj_set_style_text_color(widgets.manufacturer, lv_color_hex(COL_TEXT), 0);
+  lv_label_set_long_mode(widgets.manufacturer, LV_LABEL_LONG_DOT);
+  lv_obj_set_width(widgets.manufacturer, lv_pct(100));
+  lv_label_set_text(widgets.manufacturer, "--");
+
+  lv_obj_t *divider1 = lv_obj_create(specRow);
+  lv_obj_remove_style_all(divider1);
+  lv_obj_set_size(divider1, 1, 24);
+  lv_obj_set_style_bg_color(divider1, lv_color_hex(COL_BORDER_SOFT), 0);
+  lv_obj_set_style_bg_opa(divider1, LV_OPA_COVER, 0);
+
+  lv_obj_t *nozzleBox = lv_obj_create(specRow);
+  lv_obj_remove_style_all(nozzleBox);
+  lv_obj_set_width(nozzleBox, 0);
+  lv_obj_set_height(nozzleBox, lv_pct(100));
+  lv_obj_set_flex_grow(nozzleBox, 1);
+  lv_obj_set_flex_flow(nozzleBox, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_flex_align(nozzleBox, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER,
+                        LV_FLEX_ALIGN_CENTER);
+  lv_obj_clear_flag(nozzleBox, LV_OBJ_FLAG_SCROLLABLE);
+
+  lv_obj_t *nozzleKey = lv_label_create(nozzleBox);
+  lv_obj_set_style_text_font(nozzleKey, &lv_font_montserrat_12, 0);
+  lv_obj_set_style_text_color(nozzleKey, lv_color_hex(COL_DIM), 0);
+  lv_label_set_text(nozzleKey, "MIN/MAX");
+
+  widgets.temps = lv_label_create(nozzleBox);
+  lv_obj_set_style_text_font(widgets.temps, &lv_font_montserrat_12, 0);
+  lv_obj_set_style_text_color(widgets.temps, lv_color_hex(COL_TEXT), 0);
+  lv_label_set_text(widgets.temps, "--");
+
+  lv_obj_t *divider2 = lv_obj_create(specRow);
+  lv_obj_remove_style_all(divider2);
+  lv_obj_set_size(divider2, 1, 24);
+  lv_obj_set_style_bg_color(divider2, lv_color_hex(COL_BORDER_SOFT), 0);
+  lv_obj_set_style_bg_opa(divider2, LV_OPA_COVER, 0);
+
+  lv_obj_t *bedBox = lv_obj_create(specRow);
+  lv_obj_remove_style_all(bedBox);
+  lv_obj_set_width(bedBox, 0);
+  lv_obj_set_height(bedBox, lv_pct(100));
+  lv_obj_set_flex_grow(bedBox, 1);
+  lv_obj_set_flex_flow(bedBox, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_flex_align(bedBox, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_END);
+  lv_obj_clear_flag(bedBox, LV_OBJ_FLAG_SCROLLABLE);
+
+  lv_obj_t *bedKey = lv_label_create(bedBox);
+  lv_obj_set_style_text_font(bedKey, &lv_font_montserrat_12, 0);
+  lv_obj_set_style_text_color(bedKey, lv_color_hex(COL_DIM), 0);
+  lv_label_set_text(bedKey, "BED");
+
+  widgets.bedTemp = lv_label_create(bedBox);
+  lv_obj_set_style_text_font(widgets.bedTemp, &lv_font_montserrat_12, 0);
+  lv_obj_set_style_text_color(widgets.bedTemp, lv_color_hex(COL_TEXT), 0);
+  lv_label_set_text(widgets.bedTemp, "--");
+
+  // 4. Bottom Spool Remaining Gauge: Header Row + Progress Bar
+  lv_obj_t *gaugeBox = lv_obj_create(body);
+  lv_obj_remove_style_all(gaugeBox);
+  lv_obj_set_width(gaugeBox, lv_pct(100));
+  lv_obj_set_height(gaugeBox, LV_SIZE_CONTENT);
+  lv_obj_set_flex_flow(gaugeBox, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_style_pad_row(gaugeBox, 4, 0);
+  lv_obj_clear_flag(gaugeBox, LV_OBJ_FLAG_SCROLLABLE);
+
+  lv_obj_t *gaugeHead = lv_obj_create(gaugeBox);
+  lv_obj_remove_style_all(gaugeHead);
+  lv_obj_set_width(gaugeHead, lv_pct(100));
+  lv_obj_set_height(gaugeHead, 16);
+  lv_obj_set_flex_flow(gaugeHead, LV_FLEX_FLOW_ROW);
+  lv_obj_set_flex_align(gaugeHead, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER,
+                        LV_FLEX_ALIGN_CENTER);
+  lv_obj_clear_flag(gaugeHead, LV_OBJ_FLAG_SCROLLABLE);
+
+  lv_obj_t *remKey = lv_label_create(gaugeHead);
+  lv_obj_set_style_text_font(remKey, &lv_font_montserrat_12, 0);
+  lv_obj_set_style_text_color(remKey, lv_color_hex(COL_DIM), 0);
+  lv_label_set_text(remKey, "REMAINING");
+
+  widgets.remaining = lv_label_create(gaugeHead);
+  lv_obj_set_style_text_font(widgets.remaining, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_color(widgets.remaining, lv_color_hex(COL_TEXT), 0);
+  lv_label_set_text(widgets.remaining, "--");
+
+  widgets.remainingBar = lv_bar_create(gaugeBox);
   lv_obj_set_width(widgets.remainingBar, lv_pct(100));
   lv_obj_set_height(widgets.remainingBar, 8);
   lv_bar_set_range(widgets.remainingBar, 0, 100);
-  lv_obj_set_style_bg_color(widgets.remainingBar, lv_color_hex(COL_BORDER_SOFT), LV_PART_MAIN);
+  lv_obj_set_style_bg_color(widgets.remainingBar, lv_color_hex(0x0B0F15), LV_PART_MAIN);
+  lv_obj_set_style_bg_opa(widgets.remainingBar, LV_OPA_COVER, LV_PART_MAIN);
+  lv_obj_set_style_border_width(widgets.remainingBar, 1, LV_PART_MAIN);
+  lv_obj_set_style_border_color(widgets.remainingBar, lv_color_hex(COL_BORDER_SOFT), LV_PART_MAIN);
   lv_obj_set_style_bg_color(widgets.remainingBar, lv_color_hex(COL_ACCENT), LV_PART_INDICATOR);
-  lv_obj_set_style_radius(widgets.remainingBar, 0, LV_PART_MAIN);
-  lv_obj_set_style_radius(widgets.remainingBar, 0, LV_PART_INDICATOR);
-
-  widgets.remaining = makeLabel(body, &lv_font_montserrat_14, lv_color_hex(COL_TEXT));
-  lv_obj_set_width(widgets.remaining, lv_pct(100));
-  widgets.cost = makeLabel(body, &lv_font_montserrat_12, lv_color_hex(COL_DIM));
-  widgets.meta = makeLabel(body, &lv_font_montserrat_12, lv_color_hex(COL_DIM));
-
-  lv_obj_set_style_text_align(widgets.colorName, LV_TEXT_ALIGN_CENTER, 0);
-  lv_obj_set_style_text_align(widgets.manufacturer, LV_TEXT_ALIGN_CENTER, 0);
-  lv_obj_set_style_text_align(widgets.material, LV_TEXT_ALIGN_CENTER, 0);
-  lv_obj_set_style_text_align(widgets.profileName, LV_TEXT_ALIGN_CENTER, 0);
-  lv_obj_set_style_text_align(widgets.temps, LV_TEXT_ALIGN_CENTER, 0);
-  lv_obj_set_style_text_align(widgets.remaining, LV_TEXT_ALIGN_CENTER, 0);
-  lv_obj_set_style_text_align(widgets.cost, LV_TEXT_ALIGN_CENTER, 0);
-  lv_obj_set_style_text_align(widgets.meta, LV_TEXT_ALIGN_CENTER, 0);
+  lv_obj_set_style_radius(widgets.remainingBar, 3, LV_PART_MAIN);
+  lv_obj_set_style_radius(widgets.remainingBar, 3, LV_PART_INDICATOR);
 }
 
 void buildStatusPage(lv_obj_t *parent) {
@@ -2713,15 +3116,16 @@ void initStyles() {
   lv_style_set_bg_opa(&columnStyle, LV_OPA_COVER);
   lv_style_set_border_width(&columnStyle, 1);
   lv_style_set_border_color(&columnStyle, lv_color_hex(COL_BORDER));
-  lv_style_set_radius(&columnStyle, 0);
+  lv_style_set_radius(&columnStyle, 8);
   lv_style_set_clip_corner(&columnStyle, false);
 
   lv_style_init(&activeColumnStyle);
+  lv_style_set_bg_color(&activeColumnStyle, lv_color_hex(0x132028));
   lv_style_set_border_width(&activeColumnStyle, 2);
   lv_style_set_border_color(&activeColumnStyle, lv_color_hex(COL_ACCENT));
 
   lv_style_init(&emptyColumnStyle);
-  lv_style_set_bg_color(&emptyColumnStyle, lv_color_hex(0x0C1016));
+  lv_style_set_bg_color(&emptyColumnStyle, lv_color_hex(0x0B0F15));
   lv_style_set_border_color(&emptyColumnStyle, lv_color_hex(COL_BORDER_SOFT));
 
   lv_style_init(&cardStyle);
@@ -3084,8 +3488,12 @@ void ui_begin() {
   lv_obj_remove_style_all(columnsRoot);
   lv_obj_set_width(columnsRoot, lv_pct(100));
   lv_obj_set_flex_grow(columnsRoot, 1);
-  lv_obj_set_flex_flow(columnsRoot, LV_FLEX_FLOW_ROW);
+  lv_obj_set_flex_flow(columnsRoot, LV_FLEX_FLOW_ROW_WRAP);
   lv_obj_set_style_pad_column(columnsRoot, 10, 0);
+  lv_obj_set_style_pad_row(columnsRoot, 10, 0);
+  lv_obj_set_flex_align(columnsRoot, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_SPACE_BETWEEN,
+                        LV_FLEX_ALIGN_CENTER);
+  lv_obj_clear_flag(columnsRoot, LV_OBJ_FLAG_SCROLLABLE);
   lv_obj_add_flag(columnsRoot, LV_OBJ_FLAG_HIDDEN);
 
   for (int column = 0; column < COLUMNS_PER_PAGE; ++column) {

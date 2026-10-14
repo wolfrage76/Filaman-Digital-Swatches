@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "app_config.h"
+#include "menu_ui.h"
 #include "touch_input.h"
 
 // Scan -> pick SSID -> type password -> save to NVS -> restart to connect.
@@ -26,6 +27,9 @@ lv_obj_t *titleLabel = nullptr;
 lv_obj_t *statusLabel = nullptr;
 lv_obj_t *content = nullptr;
 lv_obj_t *taPass = nullptr;
+
+enum class WifiPane : uint8_t { Info, Scan, Password };
+WifiPane pane = WifiPane::Info;
 
 std::vector<String> ssids;
 String selSsid;
@@ -91,6 +95,17 @@ void onSsidClicked(lv_event_t *e) {
 
 void onScanAgain(lv_event_t *) { showScanList(); }
 
+void onBack(lv_event_t *) {
+  if (pane == WifiPane::Password) {
+    showScanList();
+  } else if (pane == WifiPane::Scan) {
+    showWifiInfo();
+  } else {
+    wifi_setup_close();
+    menu_open();
+  }
+}
+
 void onSave(lv_event_t *) {
   const String pass = taPass ? String(lv_textarea_get_text(taPass)) : String();
   config().setWifi(selSsid, pass);
@@ -101,6 +116,7 @@ void onSave(lv_event_t *) {
 
 // Home screen: current WiFi status + a button to scan and change it.
 void showWifiInfo() {
+  pane = WifiPane::Info;
   clearContent();
   lv_label_set_text(titleLabel, "WiFi");
   setStatus("", COL_MUTED);
@@ -128,12 +144,10 @@ void showWifiInfo() {
   lv_label_set_text(info, t.c_str());
 
   makeRowButton(col, String(LV_SYMBOL_WIFI) + "  Scan & change WiFi", onScanAgain, nullptr);
-  makeRowButton(
-      col, String(LV_SYMBOL_CLOSE) + "  Close",
-      [](lv_event_t *) { wifi_setup_close(); }, nullptr);
 }
 
 void showScanList() {
+  pane = WifiPane::Scan;
   clearContent();
   lv_label_set_text(titleLabel, "WiFi Setup");
   setStatus("Scanning...", COL_MUTED);
@@ -177,6 +191,7 @@ void showScanList() {
 }
 
 void showPassword() {
+  pane = WifiPane::Password;
   clearContent();
   lv_label_set_text(titleLabel, "WiFi Password");
   setStatus(selSsid + "   (leave blank for open network)", COL_MUTED);
@@ -189,7 +204,6 @@ void showPassword() {
   lv_textarea_set_placeholder_text(taPass, "Password");
 
   makeRowButton(col, String(LV_SYMBOL_OK) + "  Connect", onSave, nullptr);
-  makeRowButton(col, String(LV_SYMBOL_LEFT) + "  Back", onScanAgain, nullptr);
 
   // On-screen keyboard pinned to the bottom, targeting the password field.
   lv_obj_t *kb = lv_keyboard_create(content);
@@ -217,10 +231,25 @@ void wifi_setup_begin() {
   lv_obj_t *header = lv_obj_create(overlay);
   lv_obj_remove_style_all(header);
   lv_obj_set_width(header, lv_pct(100));
-  lv_obj_set_height(header, 40);
+  lv_obj_set_height(header, 44);
   lv_obj_set_flex_flow(header, LV_FLEX_FLOW_ROW);
   lv_obj_set_flex_align(header, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
   lv_obj_set_style_pad_column(header, 10, 0);
+
+  lv_obj_t *backBtn = lv_btn_create(header);
+  lv_obj_set_size(backBtn, 48, 40);
+  lv_obj_set_style_bg_color(backBtn, lv_color_hex(COL_SURFACE_2), 0);
+  lv_obj_set_style_border_width(backBtn, 1, 0);
+  lv_obj_set_style_border_color(backBtn, lv_color_hex(COL_BORDER), 0);
+  lv_obj_set_style_radius(backBtn, 8, 0);
+  lv_obj_set_style_shadow_width(backBtn, 0, 0);
+  lv_obj_set_ext_click_area(backBtn, 10);
+  lv_obj_add_event_cb(backBtn, onBack, LV_EVENT_CLICKED, nullptr);
+  lv_obj_t *backIcon = lv_label_create(backBtn);
+  lv_obj_set_style_text_font(backIcon, &lv_font_montserrat_22, 0);
+  lv_obj_set_style_text_color(backIcon, lv_color_hex(COL_ACCENT), 0);
+  lv_label_set_text(backIcon, LV_SYMBOL_LEFT);
+  lv_obj_center(backIcon);
 
   titleLabel = lv_label_create(header);
   lv_obj_set_style_text_font(titleLabel, &lv_font_montserrat_22, 0);

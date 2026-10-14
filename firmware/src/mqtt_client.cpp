@@ -534,6 +534,13 @@ void DisplayMqtt::handleMessage(char *topicChars, byte *payload, unsigned int le
     }
     slot.nozzleMin = jsonString(doc["nozzle_min"]);
     slot.nozzleMax = jsonString(doc["nozzle_max"]);
+    slot.bedTemp = jsonString(doc["bed_temp"]);
+    if (!slot.bedTemp.length()) {
+      slot.bedTemp = jsonString(doc["bed_temperature"]);
+    }
+    slot.densityGcm3 =
+        doc["density_g_cm3"].isNull() ? 0.0f : doc["density_g_cm3"].as<float>();
+    slot.diameterMm = doc["diameter_mm"].isNull() ? 0.0f : doc["diameter_mm"].as<float>();
     slot.remainingPercent = jsonInt(doc["remaining_percent"], -1);
     slot.remainingGrams = jsonString(doc["remaining_grams"]);
     slot.costRemaining = jsonString(doc["cost_remaining"]);

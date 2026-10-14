@@ -34,7 +34,21 @@ constexpr uint32_t COL_DANGER = 0xFF5C6A;
 
 enum class Pane { Home, Filaman, Mqtt, Device, Display, Update, System };
 
+enum class MenuIcon : uint8_t {
+  Printer,
+  Ams,
+  Alert,
+  Wifi,
+  Filaman,
+  Mqtt,
+  Display,
+  Device,
+  Update,
+  System,
+};
+
 lv_obj_t *overlay = nullptr;
+lv_obj_t *backBtn = nullptr;
 lv_obj_t *titleLabel = nullptr;
 lv_obj_t *statusLabel = nullptr;
 lv_obj_t *content = nullptr;
@@ -101,6 +115,13 @@ void clearContent() {
   tlsLabel = nullptr;
   updateProgressBar = nullptr;
   autoCheckLabel = nullptr;
+  if (backBtn) {
+    if (pane == Pane::Home) {
+      lv_obj_add_flag(backBtn, LV_OBJ_FLAG_HIDDEN);
+    } else {
+      lv_obj_clear_flag(backBtn, LV_OBJ_FLAG_HIDDEN);
+    }
+  }
 }
 
 void onMenuScrollEvent(lv_event_t *event) {
@@ -199,10 +220,149 @@ lv_obj_t *makeMenuRow(lv_obj_t *parent, lv_coord_t height) {
   return row;
 }
 
-// Home-menu destination tile: monogram + label. Use ASCII letters only for the
-// mark — many LV_SYMBOL_* glyphs are missing from Montserrat and render as
-// empty boxes on device.
-lv_obj_t *makeMenuTile(lv_obj_t *parent, const char *mark, const char *label, bool emphasize,
+void menuIconDraw(lv_event_t *event) {
+  if (lv_event_get_code(event) != LV_EVENT_DRAW_MAIN) {
+    return;
+  }
+  lv_obj_t *obj = lv_event_get_target(event);
+  lv_draw_ctx_t *ctx = lv_event_get_draw_ctx(event);
+  if (!obj || !ctx) {
+    return;
+  }
+
+  const intptr_t iconData = reinterpret_cast<intptr_t>(lv_obj_get_user_data(obj));
+  const MenuIcon icon = static_cast<MenuIcon>(iconData & 0xFF);
+  const bool inverse = (iconData & 0x100) != 0;
+  lv_area_t c;
+  lv_obj_get_coords(obj, &c);
+  const lv_coord_t x = c.x1 + lv_area_get_width(&c) / 2;
+  const lv_coord_t y = c.y1 + lv_area_get_height(&c) / 2;
+
+  lv_draw_line_dsc_t line;
+  lv_draw_line_dsc_init(&line);
+  line.color = lv_color_hex(inverse ? COL_BG : COL_ACCENT);
+  line.opa = LV_OPA_COVER;
+  line.width = 2;
+  line.round_start = 1;
+  line.round_end = 1;
+
+  auto drawLine = [&](int x1, int y1, int x2, int y2) {
+    lv_point_t a = {static_cast<lv_coord_t>(x + x1), static_cast<lv_coord_t>(y + y1)};
+    lv_point_t b = {static_cast<lv_coord_t>(x + x2), static_cast<lv_coord_t>(y + y2)};
+    lv_draw_line(ctx, &line, &a, &b);
+  };
+  auto drawRect = [&](int x1, int y1, int x2, int y2, int radius = 2) {
+    lv_draw_rect_dsc_t rect;
+    lv_draw_rect_dsc_init(&rect);
+    rect.bg_opa = LV_OPA_TRANSP;
+    rect.border_opa = LV_OPA_COVER;
+    rect.border_width = 2;
+    rect.border_color = line.color;
+    rect.radius = radius;
+    lv_area_t area = {static_cast<lv_coord_t>(x + x1), static_cast<lv_coord_t>(y + y1),
+                      static_cast<lv_coord_t>(x + x2), static_cast<lv_coord_t>(y + y2)};
+    lv_draw_rect(ctx, &rect, &area);
+  };
+  auto drawDot = [&](int dx, int dy, int radius = 2) {
+    lv_draw_rect_dsc_t dot;
+    lv_draw_rect_dsc_init(&dot);
+    dot.bg_color = line.color;
+    dot.bg_opa = LV_OPA_COVER;
+    dot.border_width = 0;
+    dot.radius = LV_RADIUS_CIRCLE;
+    lv_area_t area = {static_cast<lv_coord_t>(x + dx - radius),
+                      static_cast<lv_coord_t>(y + dy - radius),
+                      static_cast<lv_coord_t>(x + dx + radius),
+                      static_cast<lv_coord_t>(y + dy + radius)};
+    lv_draw_rect(ctx, &dot, &area);
+  };
+
+  switch (icon) {
+    case MenuIcon::Printer:
+      drawRect(-10, -8, 10, 7);
+      drawLine(-7, -4, 7, -4);
+      drawLine(0, -4, 0, 1);
+      drawLine(-3, 1, 3, 1);
+      drawLine(-7, 7, 7, 7);
+      break;
+    case MenuIcon::Ams:
+      drawRect(-10, -9, 10, 9);
+      drawDot(-5, -3, 3);
+      drawDot(5, -3, 3);
+      drawDot(-5, 5, 3);
+      drawDot(5, 5, 3);
+      break;
+    case MenuIcon::Alert:
+      drawLine(0, -10, -10, 9);
+      drawLine(-10, 9, 10, 9);
+      drawLine(10, 9, 0, -10);
+      drawLine(0, -4, 0, 3);
+      drawDot(0, 7, 1);
+      break;
+    case MenuIcon::Wifi:
+      drawLine(-10, -3, -6, -6);
+      drawLine(-6, -6, 0, -8);
+      drawLine(0, -8, 6, -6);
+      drawLine(6, -6, 10, -3);
+      drawLine(-6, 2, -3, 0);
+      drawLine(-3, 0, 0, -1);
+      drawLine(0, -1, 3, 0);
+      drawLine(3, 0, 6, 2);
+      drawDot(0, 7, 2);
+      break;
+    case MenuIcon::Filaman:
+      drawRect(-8, -9, 8, 9, 7);
+      drawDot(0, 0, 3);
+      drawLine(-11, -6, -8, -6);
+      drawLine(-11, 6, -8, 6);
+      drawLine(8, -6, 11, -6);
+      drawLine(8, 6, 11, 6);
+      break;
+    case MenuIcon::Mqtt:
+      drawLine(-7, -6, 7, -2);
+      drawLine(-7, -6, -2, 8);
+      drawLine(7, -2, -2, 8);
+      drawDot(-7, -6, 3);
+      drawDot(7, -2, 3);
+      drawDot(-2, 8, 3);
+      break;
+    case MenuIcon::Display:
+      drawRect(-11, -8, 11, 6);
+      drawLine(0, 6, 0, 10);
+      drawLine(-5, 10, 5, 10);
+      break;
+    case MenuIcon::Device:
+      drawRect(-7, -7, 7, 7);
+      for (int p = -5; p <= 5; p += 5) {
+        drawLine(p, -10, p, -7);
+        drawLine(p, 7, p, 10);
+        drawLine(-10, p, -7, p);
+        drawLine(7, p, 10, p);
+      }
+      drawDot(0, 0, 2);
+      break;
+    case MenuIcon::Update:
+      drawLine(0, -10, 0, 4);
+      drawLine(-5, 0, 0, 5);
+      drawLine(0, 5, 5, 0);
+      drawLine(-9, 8, -9, 10);
+      drawLine(-9, 10, 9, 10);
+      drawLine(9, 10, 9, 8);
+      break;
+    case MenuIcon::System:
+      drawLine(-9, -6, 9, -6);
+      drawLine(-9, 0, 9, 0);
+      drawLine(-9, 6, 9, 6);
+      drawDot(-3, -6, 3);
+      drawDot(5, 0, 3);
+      drawDot(-5, 6, 3);
+      break;
+  }
+}
+
+// Destination tiles use custom vector icons. They remain crisp on the panel
+// and do not depend on optional font glyphs that may render as empty squares.
+lv_obj_t *makeMenuTile(lv_obj_t *parent, MenuIcon iconKind, const char *label, bool emphasize,
                        bool badge, lv_event_cb_t cb, void *ud) {
   lv_obj_t *btn = lv_btn_create(parent);
   lv_obj_set_flex_grow(btn, 1);
@@ -240,11 +400,14 @@ lv_obj_t *makeMenuTile(lv_obj_t *parent, const char *mark, const char *label, bo
   lv_obj_set_style_bg_color(chip, lv_color_hex(emphasize ? COL_ACCENT : 0x243040), 0);
   lv_obj_set_style_bg_opa(chip, LV_OPA_COVER, 0);
   lv_obj_clear_flag(chip, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
-  lv_obj_t *icon = lv_label_create(chip);
-  lv_obj_set_style_text_font(icon, &lv_font_montserrat_18, 0);
-  lv_obj_set_style_text_color(icon, lv_color_hex(emphasize ? COL_BG : COL_ACCENT), 0);
-  lv_label_set_text(icon, mark);
+  lv_obj_t *icon = lv_obj_create(chip);
+  lv_obj_remove_style_all(icon);
+  lv_obj_set_size(icon, 28, 28);
   lv_obj_center(icon);
+  const intptr_t iconData = static_cast<intptr_t>(iconKind) | (emphasize ? 0x100 : 0);
+  lv_obj_set_user_data(icon, reinterpret_cast<void *>(iconData));
+  lv_obj_add_event_cb(icon, menuIconDraw, LV_EVENT_DRAW_MAIN, nullptr);
+  lv_obj_clear_flag(icon, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
 
   lv_obj_t *lbl = lv_label_create(btn);
   lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, 0);
@@ -542,11 +705,11 @@ void showHome() {
 
   addSection(col, "SCREENS");
   lv_obj_t *screens = makeMenuRow(col, 86);
-  makeMenuTile(screens, "P", "Printer", true, false, onScreen,
+  makeMenuTile(screens, MenuIcon::Printer, "Print Status", true, false, onScreen,
                reinterpret_cast<void *>(static_cast<intptr_t>(STATUS_PAGE)));
-  makeMenuTile(screens, "A", "AMS View", true, false, onScreen,
+  makeMenuTile(screens, MenuIcon::Ams, "AMS View", true, false, onScreen,
                reinterpret_cast<void *>(static_cast<intptr_t>(AMS_OVERVIEW_PAGE)));
-  makeMenuTile(screens, "!", "Alerts", true, false, onScreen,
+  makeMenuTile(screens, MenuIcon::Alert, "Alerts", true, false, onScreen,
                reinterpret_cast<void *>(static_cast<intptr_t>(ALERTS_PAGE)));
 
   addSection(col, "CONFIGURATION");
@@ -560,17 +723,22 @@ void showHome() {
   lv_obj_clear_flag(cfg, LV_OBJ_FLAG_SCROLLABLE);
 
   lv_obj_t *row1 = makeMenuRow(cfg, 0);
-  makeMenuTile(row1, "Pr", "Printer", false, false, onPrinter, nullptr);
-  makeMenuTile(row1, "Wi", "WiFi", false, false, onWifi, nullptr);
-  makeMenuTile(row1, "Fi", "FilaMan", false, false, [](lv_event_t *) { showFilaman(); }, nullptr);
-  makeMenuTile(row1, "Mq", "MQTT", false, false, [](lv_event_t *) { showMqtt(); }, nullptr);
+  makeMenuTile(row1, MenuIcon::Printer, "Select Printer", false, false, onPrinter, nullptr);
+  makeMenuTile(row1, MenuIcon::Wifi, "WiFi", false, false, onWifi, nullptr);
+  makeMenuTile(row1, MenuIcon::Filaman, "FilaMan", false, false,
+               [](lv_event_t *) { showFilaman(); }, nullptr);
+  makeMenuTile(row1, MenuIcon::Mqtt, "MQTT", false, false,
+               [](lv_event_t *) { showMqtt(); }, nullptr);
 
   lv_obj_t *row2 = makeMenuRow(cfg, 0);
-  makeMenuTile(row2, "Di", "Display", false, false, [](lv_event_t *) { showDisplay(); }, nullptr);
-  makeMenuTile(row2, "De", "Device", false, false, [](lv_event_t *) { showDevice(); }, nullptr);
-  makeMenuTile(row2, "Up", "Update", false, updateBadgeVisible(), [](lv_event_t *) { showUpdate(); },
-               nullptr);
-  makeMenuTile(row2, "Sy", "System", false, false, [](lv_event_t *) { showSystem(); }, nullptr);
+  makeMenuTile(row2, MenuIcon::Display, "Display", false, false,
+               [](lv_event_t *) { showDisplay(); }, nullptr);
+  makeMenuTile(row2, MenuIcon::Device, "Device", false, false,
+               [](lv_event_t *) { showDevice(); }, nullptr);
+  makeMenuTile(row2, MenuIcon::Update, "Update", false, updateBadgeVisible(),
+               [](lv_event_t *) { showUpdate(); }, nullptr);
+  makeMenuTile(row2, MenuIcon::System, "System", false, false,
+               [](lv_event_t *) { showSystem(); }, nullptr);
 }
 
 void showFilaman() {
@@ -590,7 +758,6 @@ void showFilaman() {
 
   makeAction(col, "Test Connection", false, onTestFilaman, nullptr);
   makeAction(col, "Save & reboot", true, onSave, nullptr);
-  makeAction(col, "Back", false, onBackHome, nullptr);
 }
 
 void showMqtt() {
@@ -609,7 +776,6 @@ void showMqtt() {
   addField(card, "Topic prefix", config().topicPrefix.c_str(), false);
   makeAction(col, "Test Connection", false, onTestMqtt, nullptr);
   makeAction(col, "Save & reboot", true, onSave, nullptr);
-  makeAction(col, "Back", false, onBackHome, nullptr);
 }
 
 constexpr int kTimeoutChoices[] = {5, 10, 15, 30};
@@ -896,7 +1062,6 @@ void showDisplay() {
   static constexpr const char *kCritLbls[] = {"10%", "15%", "20%"};
   addChoiceRow(cardNav, "Critical spool alert (red)", kCritVals, kCritLbls, 3, CK_SPOOL_CRIT);
 
-  makeAction(col, "Back", false, onBackHome, nullptr);
 }
 
 struct TzPreset {
@@ -971,7 +1136,6 @@ void showDevice() {
 
   addField(card, "OTA / config password", "", true);
   makeAction(col, "Save & reboot", true, onSave, nullptr);
-  makeAction(col, "Back", false, onBackHome, nullptr);
 }
 
 void runGithubCheck() {
@@ -1119,7 +1283,6 @@ void showUpdate() {
   }
   makeAction(col, installText.c_str(), newerAvailable, onInstallGithubUpdate, nullptr);
 
-  makeAction(col, "Back", false, onBackHome, nullptr);
 }
 
 void addStatLine(lv_obj_t *parent, const char *label, const String &val) {
@@ -1220,7 +1383,6 @@ void showSystem() {
     lv_obj_set_style_text_color(lbl, lv_color_hex(COL_DANGER), 0);
   }
 
-  makeAction(col, "Back", false, onBackHome, nullptr);
 }
 
 void onCloseClicked(lv_event_t *) { menu_close(); }
@@ -1251,6 +1413,24 @@ void menu_begin() {
   lv_obj_set_style_pad_column(header, 10, 0);
   lv_obj_clear_flag(header, LV_OBJ_FLAG_SCROLLABLE);
   lv_obj_set_style_clip_corner(header, true, 0);
+
+  backBtn = lv_btn_create(header);
+  lv_obj_set_size(backBtn, 48, 40);
+  lv_obj_set_style_bg_color(backBtn, lv_color_hex(COL_SURFACE_2), 0);
+  lv_obj_set_style_bg_opa(backBtn, LV_OPA_COVER, 0);
+  lv_obj_set_style_border_width(backBtn, 1, 0);
+  lv_obj_set_style_border_color(backBtn, lv_color_hex(COL_BORDER), 0);
+  lv_obj_set_style_radius(backBtn, 10, 0);
+  lv_obj_set_style_shadow_width(backBtn, 0, 0);
+  lv_obj_set_style_pad_all(backBtn, 0, 0);
+  lv_obj_set_ext_click_area(backBtn, 10);
+  lv_obj_add_event_cb(backBtn, onBackHome, LV_EVENT_CLICKED, nullptr);
+  lv_obj_add_flag(backBtn, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_t *backIcon = lv_label_create(backBtn);
+  lv_obj_set_style_text_font(backIcon, &lv_font_montserrat_22, 0);
+  lv_obj_set_style_text_color(backIcon, lv_color_hex(COL_ACCENT), 0);
+  lv_label_set_text(backIcon, LV_SYMBOL_LEFT);
+  lv_obj_center(backIcon);
 
   titleLabel = lv_label_create(header);
   lv_obj_set_style_text_font(titleLabel, &lv_font_montserrat_22, 0);
