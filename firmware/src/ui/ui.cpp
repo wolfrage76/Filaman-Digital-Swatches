@@ -181,6 +181,8 @@ lv_obj_t *alertsRoot = nullptr;
 lv_obj_t *alertsEmpty = nullptr;
 lv_obj_t *alertBanner = nullptr;
 lv_obj_t *alertBannerLabel = nullptr;
+lv_obj_t *headerBar = nullptr;
+lv_obj_t *headerLeft = nullptr;
 lv_obj_t *titleLabel = nullptr;
 lv_obj_t *backBtn = nullptr;
 lv_obj_t *stateLabel = nullptr;
@@ -1100,15 +1102,16 @@ void ensureDefaults() {
   }
 }
 
-void setLabelIfChanged(lv_obj_t *label, const String &text) {
+bool setLabelIfChanged(lv_obj_t *label, const String &text) {
   if (!label) {
-    return;
+    return false;
   }
   const char *current = lv_label_get_text(label);
   if (current && text == current) {
-    return;
+    return false;
   }
   lv_label_set_text(label, text.c_str());
+  return true;
 }
 
 // LVGL invalidates on every lv_obj_set_style_*/add_flag call regardless of
@@ -1457,16 +1460,27 @@ void refreshAlertBanner() {
 }
 
 void refreshHeaderLabels() {
-  setHiddenIfChanged(backBtn, isOverviewPage());
-  setLabelIfChanged(titleLabel, pageTitle());
+  const bool hideBack = isOverviewPage();
+  const bool backChanged = backBtn && lv_obj_has_flag(backBtn, LV_OBJ_FLAG_HIDDEN) != hideBack;
+  setHiddenIfChanged(backBtn, hideBack);
+  // Title needs room for "AMS View"; on detail pages with the back button
+  // visible, keep it compact so climate/status text still has space.
+  if (titleLabel) {
+    lv_obj_set_width(titleLabel, hideBack ? 140 : 100);
+  }
+  bool chromeChanged = backChanged;
+  chromeChanged |= setLabelIfChanged(titleLabel, pageTitle());
   if (isStatusPage()) {
     if (lastPrinterUpdateMs == 0) {
-      setLabelIfChanged(stateLabel, "Linking");
+      chromeChanged |= setLabelIfChanged(stateLabel, "Linking");
     } else {
-      setLabelIfChanged(stateLabel, printer.state.length() ? printer.state : "");
+      chromeChanged |= setLabelIfChanged(stateLabel, printer.state.length() ? printer.state : "");
     }
     setTextColorIfChanged(stateLabel, COL_MUTED);
   } else if (isOverviewPage()) {
+    // Printer name + state + progress can grow after MQTT connects. Without a
+    // forced flex pass, LONG_DOT content can inflate headerLeft and leave the
+    // title undrawn until a full reboot rebuilds the tree.
     String summary = printer.name.length() ? printer.name : String("");
     if (printer.state.length()) {
       if (summary.length()) {
@@ -1484,14 +1498,21 @@ void refreshHeaderLabels() {
     if (!summary.length()) {
       summary = String(overviewUnitCount) + " units";
     }
-    setLabelIfChanged(stateLabel, summary);
+    chromeChanged |= setLabelIfChanged(stateLabel, summary);
     setTextColorIfChanged(stateLabel, COL_ACCENT);
   } else if (isAlertsPage()) {
-    setLabelIfChanged(stateLabel, String(alertItemCount) + " alerts");
+    chromeChanged |= setLabelIfChanged(stateLabel, String(alertItemCount) + " alerts");
     setTextColorIfChanged(stateLabel, COL_MUTED);
   } else {
-    setLabelIfChanged(stateLabel, amsClimateSummary());
+    chromeChanged |= setLabelIfChanged(stateLabel, amsClimateSummary());
     setTextColorIfChanged(stateLabel, COL_MUTED);
+  }
+  // Back visibility, title width, or status text length all change the left
+  // flex min-width. Relayout whenever chrome text/structure changes — not only
+  // on navigation — so the main AMS View header cannot stay crushed until reboot.
+  if (chromeChanged && headerBar) {
+    lv_obj_update_layout(headerBar);
+    lv_obj_invalidate(headerBar);
   }
 }
 
@@ -2334,6 +2355,10 @@ void gotoPage(int page) {
   setHiddenIfChanged(alertsRoot, !alerts);
   if (detail) {
     layoutDetailColumns();
+  }
+  if (headerBar) {
+    lv_obj_update_layout(headerBar);
+    lv_obj_invalidate(headerBar);
   }
 
   // Repaint the body incrementally across loop ticks via the staged apply path
@@ -3334,28 +3359,33 @@ void ui_begin() {
   lv_obj_set_flex_flow(root, LV_FLEX_FLOW_COLUMN);
   lv_obj_clear_flag(root, LV_OBJ_FLAG_SCROLLABLE);
 
-  lv_obj_t *header = lv_obj_create(root);
-  lv_obj_remove_style_all(header);
-  lv_obj_set_width(header, lv_pct(100));
-  lv_obj_set_height(header, 42);
-  lv_obj_set_flex_flow(header, LV_FLEX_FLOW_ROW);
-  lv_obj_set_flex_align(header, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-  lv_obj_set_style_pad_column(header, 8, 0);
-  lv_obj_clear_flag(header, LV_OBJ_FLAG_SCROLLABLE);
+  // Fixed chrome: [back+title+status ...] [wifi+ver] [menu].
+  // Left grows and absorbs remaining width; center/right stay content-sized so
+  // showing the back button cannot collapse the title off-screen.
+  headerBar = lv_obj_create(root);
+  lv_obj_remove_style_all(headerBar);
+  lv_obj_set_width(headerBar, lv_pct(100));
+  lv_obj_set_height(headerBar, 44);
+  lv_obj_set_flex_flow(headerBar, LV_FLEX_FLOW_ROW);
+  lv_obj_set_flex_align(headerBar, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_style_pad_column(headerBar, 8, 0);
+  lv_obj_set_style_clip_corner(headerBar, true, 0);
+  lv_obj_clear_flag(headerBar, LV_OBJ_FLAG_SCROLLABLE);
 
-  lv_obj_t *headerLeft = lv_obj_create(header);
+  headerLeft = lv_obj_create(headerBar);
   lv_obj_remove_style_all(headerLeft);
   lv_obj_set_width(headerLeft, 0);
   lv_obj_set_flex_grow(headerLeft, 1);
-  lv_obj_set_height(headerLeft, LV_SIZE_CONTENT);
+  lv_obj_set_height(headerLeft, 44);
   lv_obj_set_flex_flow(headerLeft, LV_FLEX_FLOW_ROW);
   lv_obj_set_flex_align(headerLeft, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-  lv_obj_set_style_pad_column(headerLeft, 10, 0);
-  lv_obj_set_style_pad_left(headerLeft, 4, 0);
+  lv_obj_set_style_pad_column(headerLeft, 8, 0);
+  lv_obj_set_style_pad_left(headerLeft, 2, 0);
+  lv_obj_set_style_clip_corner(headerLeft, true, 0);
   lv_obj_clear_flag(headerLeft, LV_OBJ_FLAG_SCROLLABLE);
 
   backBtn = lv_btn_create(headerLeft);
-  lv_obj_set_size(backBtn, 56, 38);
+  lv_obj_set_size(backBtn, 48, 36);
   lv_obj_set_style_bg_color(backBtn, lv_color_hex(COL_SURFACE_2), 0);
   lv_obj_set_style_bg_opa(backBtn, LV_OPA_COVER, 0);
   lv_obj_set_style_border_width(backBtn, 1, 0);
@@ -3377,11 +3407,18 @@ void ui_begin() {
   lv_obj_set_style_text_color(titleLabel, lv_color_hex(COL_TEXT), 0);
   lv_label_set_long_mode(titleLabel, LV_LABEL_LONG_DOT);
   lv_obj_set_width(titleLabel, 140);
+  lv_obj_set_style_min_width(titleLabel, 72, 0);
+  // Keep the title from flex-shrinking when stateLabel text arrives later.
+  lv_obj_set_flex_grow(titleLabel, 0);
 
   stateLabel = lv_label_create(headerLeft);
   lv_obj_set_style_text_font(stateLabel, &lv_font_montserrat_12, 0);
   lv_obj_set_style_text_color(stateLabel, lv_color_hex(COL_MUTED), 0);
   lv_label_set_long_mode(stateLabel, LV_LABEL_LONG_DOT);
+  // width 0 + flex_grow is required for LONG_DOT to shrink inside a flex row;
+  // without it a long climate/status string can inflate headerLeft past the
+  // screen and leave title/back undrawn until a full reboot layout pass.
+  lv_obj_set_width(stateLabel, 0);
   lv_obj_set_flex_grow(stateLabel, 1);
   lv_obj_add_flag(stateLabel, LV_OBJ_FLAG_CLICKABLE);
   lv_obj_set_ext_click_area(stateLabel, 10);
@@ -3390,9 +3427,9 @@ void ui_begin() {
   // Freshness indicator ("Live" / "Ns ago" / "Stale") removed per request.
   // freshLabel stays null; refreshFreshness() no-ops safely on the null guard.
 
-  lv_obj_t *headerCenter = lv_obj_create(header);
+  lv_obj_t *headerCenter = lv_obj_create(headerBar);
   lv_obj_remove_style_all(headerCenter);
-  lv_obj_set_size(headerCenter, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+  lv_obj_set_size(headerCenter, LV_SIZE_CONTENT, 44);
   lv_obj_set_flex_flow(headerCenter, LV_FLEX_FLOW_ROW);
   lv_obj_set_flex_align(headerCenter, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
   lv_obj_set_style_pad_column(headerCenter, 6, 0);
@@ -3414,18 +3451,16 @@ void ui_begin() {
   lv_obj_set_ext_click_area(versionLabel, 12);
   lv_obj_add_event_cb(versionLabel, versionEvent, LV_EVENT_CLICKED, nullptr);
 
-  lv_obj_t *headerRight = lv_obj_create(header);
+  lv_obj_t *headerRight = lv_obj_create(headerBar);
   lv_obj_remove_style_all(headerRight);
-  lv_obj_set_width(headerRight, 0);
-  lv_obj_set_flex_grow(headerRight, 1);
-  lv_obj_set_height(headerRight, LV_SIZE_CONTENT);
+  lv_obj_set_size(headerRight, LV_SIZE_CONTENT, 44);
   lv_obj_set_flex_flow(headerRight, LV_FLEX_FLOW_ROW);
   lv_obj_set_flex_align(headerRight, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
   lv_obj_set_style_pad_right(headerRight, 2, 0);
   lv_obj_clear_flag(headerRight, LV_OBJ_FLAG_SCROLLABLE);
 
   lv_obj_t *menuBtn = lv_btn_create(headerRight);
-  lv_obj_set_size(menuBtn, 68, 38);
+  lv_obj_set_size(menuBtn, 56, 36);
   lv_obj_set_style_bg_color(menuBtn, lv_color_hex(COL_SURFACE_2), 0);
   lv_obj_set_style_bg_opa(menuBtn, LV_OPA_COVER, 0);
   lv_obj_set_style_border_width(menuBtn, 1, 0);

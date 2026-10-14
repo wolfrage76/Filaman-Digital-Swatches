@@ -2,9 +2,11 @@
 
 A 7″ touchscreen AMS and printer dashboard for Bambu Lab printers, built for the **Elecrow CrowPanel 7″ (ESP32-S3)** and powered by **FilaMan’s Display API**.
 
-**Firmware:** `0.20.22` · **[Web Flasher](https://wolfrage76.github.io/Filaman-Digital-Swatches/)** · **[Releases](https://github.com/wolfrage76/Filaman-Digital-Swatches/releases)**
+**Firmware:** `0.20.23` · **[Web Flasher](https://wolfrage76.github.io/Filaman-Digital-Swatches/)** · **[Releases](https://github.com/wolfrage76/Filaman-Digital-Swatches/releases)**
 
 ![AMS overview on CrowPanel — four AMS units and four AMS-HT slots with filament swatches](docs/images/ams-overview.png)
+
+![AMS slot detail — four trays with color swatches, brand, nozzle range, bed temp, and remaining length](docs/images/ams-slot.png)
 
 ---
 
@@ -53,15 +55,15 @@ Open the Web Flasher in **Chrome** or **Edge**:
    - **OTA / Config Password** — optional; sets the `admin` password for this page
 4. Click **Save**.
 
-Within ~10–15 seconds the header badge changes from `FilaMan...` to **`Live`**.
+Within ~10–15 seconds the header Wi‑Fi icon turns accent green when FilaMan is linked (yellow while still connecting; red/`×` if Wi‑Fi itself failed).
 
 ---
 
 ### Step 3 — (Recommended) Add Bambuddy for full AMS & job data
 
-The panel only talks to **FilaMan**. If FilaMan has no printer driver feeding it, the panel still connects (`Live`), but printer state and AMS trays will look empty or offline.
+The panel only talks to **FilaMan**. If FilaMan has no printer driver feeding it, the panel can still link, but printer state and AMS trays will look empty or offline.
 
-For the full dashboard shown in the screenshot:
+For the full dashboard shown in the screenshots:
 
 1. Run **[Bambuddy](https://github.com/maziggy/bambuddy)** on your LAN and connect your Bambu printer(s).
 2. In **FilaMan**, install/enable the **Bambuddy** plugin and add each printer using the Bambuddy driver.
@@ -69,7 +71,7 @@ For the full dashboard shown in the screenshot:
 
 | FilaMan only | FilaMan + Bambuddy |
 |---|---|
-| Panel links to FilaMan (`Live`) | Same |
+| Panel links to FilaMan | Same |
 | Printer often `offline` / `unknown` | Live state, print job, layer, progress, ETA |
 | AMS trays empty or static inventory only | Live AMS A–D + AMS-HT swatches, temps, humidity, drying |
 | Few or no alerts | Printer HMS + low-spool alerts |
@@ -78,8 +80,10 @@ For the full dashboard shown in the screenshot:
 
 ### Step 4 — Everyday use & updates
 
-- **Navigate:** tap the footer (`Print · All · A · B · C · D · HT · Alrt`) or swipe left/right. After ~60 s idle, the screen returns to **Print** (unless you’re viewing active alerts).
-- **Menu (`≡`):** change printer, Wi‑Fi, FilaMan URL/key, screen dim/off timers, or device hostname on the panel itself.
+- **Home screen:** **AMS View** (all units). Tap an AMS card for that unit’s slot detail; use the header **←** to return. Tap the printer name/status in the AMS View header to open **Print Status**.
+- **Navigate:** open **`≡` → SCREENS** for Print Status / AMS View / Alerts, or swipe left/right between pages. After ~60 s idle, the panel returns to **AMS View**.
+- **Menu (`≡`):** Select Printer, Wi‑Fi, FilaMan, MQTT, Display (dim/off timers), Device (hostname / timezone / OTA password), Update, and System.
+- **Web config:** `http://crowpanel.local/` (or the panel IP). **Diagnostics** tab shows device logs and can download a live screenshot.
 - **Easy updates later:**
   - **Over Wi‑Fi:** open `http://crowpanel.local/update` (user `admin`, password = your OTA password) and upload a `.bin`, *or*
   - **Over USB:** use **Keep Settings & Update** on the [Web Flasher](https://wolfrage76.github.io/Filaman-Digital-Swatches/).
@@ -90,7 +94,7 @@ For the full dashboard shown in the screenshot:
 
 - **Blank screen after an update** — Open the [Web Flasher](https://wolfrage76.github.io/Filaman-Digital-Swatches/), run **Factory Reset & Install**, power-cycle the panel, then re-enter Wi‑Fi and FilaMan at `http://crowpanel.local/`.
 - **Serial port doesn’t show up in the browser** — Use Chrome or Edge (not Firefox/Safari), try another USB cable (many cables are power-only), and install a CH340 driver.
-- **Header stays on `FilaMan...` or `Stale`** — Check that the FilaMan URL starts with `http://` or `https://`, is reachable from the panel’s Wi‑Fi VLAN, and the `uak....` API key is valid.
+- **Wi‑Fi icon stays yellow / trays stay empty** — Check that the FilaMan URL starts with `http://` or `https://`, is reachable from the panel’s Wi‑Fi VLAN, and the `uak....` API key is valid. Use **Menu → FilaMan → Test Connection** or the web **Diagnostics** page.
 - **An old AMS-HT still appears after unplugging it** — FilaMan keeps previously discovered AMS slots active in its database; deactivate or remove that slot on the printer in FilaMan.
 - **Two panels behave strangely on the network** — Give each panel a unique **Hostname** on its web config page (`http://<panel-ip>/`).
 
