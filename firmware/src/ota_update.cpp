@@ -9,6 +9,7 @@
 
 #include "app_config.h"
 #include "config.h"
+#include "device_log.h"
 #include "ui/menu_ui.h"
 #include "ui/ui.h"
 
@@ -292,19 +293,19 @@ void ota_begin() {
   ArduinoOTA.onStart([]() {
     active = true;
     ui_set_connection_status("OTA updating...");
-    Serial.println("OTA start");
+    device_log("OTA start");
   });
   ArduinoOTA.onEnd([]() {
     active = false;
     ui_set_connection_status("OTA done, rebooting");
-    Serial.println("OTA end");
+    device_log("OTA end");
   });
   ArduinoOTA.onError([](ota_error_t error) {
     active = false;
     String msg = "OTA error ";
     msg += String(static_cast<int>(error));
     ui_set_connection_status(msg);
-    Serial.println(msg);
+    device_log(msg);
   });
   ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
     if (total == 0) {
@@ -316,13 +317,13 @@ void ota_begin() {
       return;
     }
     lastPct = pct;
-    Serial.printf("OTA %u%%\n", pct);
+    device_logf("OTA %u%%", pct);
   });
 
   ArduinoOTA.begin();
   begun = true;
-  Serial.printf("OTA ready as %s @ %s\n", config().otaHostname.c_str(),
-                WiFi.localIP().toString().c_str());
+  device_logf("OTA ready as %s @ %s", config().otaHostname.c_str(),
+              WiFi.localIP().toString().c_str());
 }
 
 void ota_loop() {
@@ -381,9 +382,9 @@ void ota_auto_check_loop() {
   lastAutoCheckMs = now;
   String ver, url, err;
   if (ota_check_github_update(ver, url, err)) {
-    Serial.printf("Auto update check: latest v%s (%s)\n", ver.c_str(),
-                  ota_update_available() ? "newer available" : "up to date");
+    device_logf("Auto update check: latest v%s (%s)", ver.c_str(),
+                ota_update_available() ? "newer available" : "up to date");
   } else {
-    Serial.printf("Auto update check failed: %s\n", err.c_str());
+    device_logf("Auto update check failed: %s", err.c_str());
   }
 }

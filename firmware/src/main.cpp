@@ -11,6 +11,8 @@
 #include "app_config.h"
 #include "backlight.h"
 #include "config.h"
+#include "device_log.h"
+#include "display_capture.h"
 #include "display_poll.h"
 #include "filaman_client.h"
 #include "mqtt_client.h"
@@ -103,7 +105,7 @@ void setStatus(const String &message) {
   }
   lastStatusText = message;
   ui_set_connection_status(message);
-  Serial.println(message);
+  device_log(message);
 }
 
 void pumpDisplay() {
@@ -230,7 +232,7 @@ void setupDisplay() {
   digitalWrite(PANEL_ENABLE_PIN, LOW);
 
   if (!gfx->begin()) {
-    Serial.println("gfx->begin() failed");
+    device_log("gfx->begin() failed");
   }
   gfx->fillScreen(BLACK);
 
@@ -257,7 +259,7 @@ void setupLvgl() {
   lv_init();
 
   if (!gfx->getFramebuffer()) {
-    Serial.println("RGB framebuffer missing");
+    device_log("RGB framebuffer missing");
     return;
   }
 
@@ -265,7 +267,7 @@ void setupLvgl() {
   lvglBuf1 = allocDrawBuffer(bufPixels);
   lvglBuf2 = allocDrawBuffer(bufPixels);
   if (!lvglBuf1) {
-    Serial.println("LVGL draw buffer alloc failed");
+    device_log("LVGL draw buffer alloc failed");
     return;
   }
   lv_disp_draw_buf_init(&drawBuffer, lvglBuf1, lvglBuf2, bufPixels);
@@ -330,11 +332,11 @@ const char *disconnectReasonText(int reason) {
 void onWifiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
   if (event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED) {
     lastDisconnectReason = info.wifi_sta_disconnected.reason;
-    Serial.printf("WiFi disconnect reason=%d\n", lastDisconnectReason);
+    device_logf("WiFi disconnect reason=%d", lastDisconnectReason);
   } else if (event == ARDUINO_EVENT_WIFI_STA_GOT_IP) {
     lastDisconnectReason = -1;
     const String ip = WiFi.localIP().toString();
-    Serial.printf("WiFi got IP %s\n", ip.c_str());
+    device_logf("WiFi got IP %s", ip.c_str());
     ui_set_ip_address(ip);
     const char *tz =
         config().displayTimezone.length() ? config().displayTimezone.c_str() : "UTC0";
@@ -426,7 +428,7 @@ void maintainWifi() {
   }
 
   wifiRetryCount++;
-  Serial.println("WiFi reconnect attempt");
+  device_log("WiFi reconnect attempt");
   WiFi.disconnect(/*wifioff=*/false, /*eraseap=*/false);
   delayWithDisplayPump(50);
   beginWifiJoin();
@@ -513,6 +515,8 @@ void setupCallbacks() {
 
 }  // namespace
 
+const uint16_t *display_framebuffer_rgb565() { return gfx->getFramebuffer(); }
+
 void setup() {
   Serial.begin(115200);
   delay(200);
@@ -522,8 +526,8 @@ void setup() {
     bootCount = 0;
   }
   bootCount++;
-  Serial.printf("CrowPanel H2C AMS monitor starting (boot #%u, reset=%s)\n", bootCount,
-                resetReasonText(bootReason));
+  device_logf("CrowPanel H2C AMS monitor starting (boot #%u, reset=%s)", bootCount,
+              resetReasonText(bootReason));
 
   // Load persisted settings first: every init below reads config() (NVS value,
   // else the compile-time default), and DisplayMqtt::begin() depends on this.

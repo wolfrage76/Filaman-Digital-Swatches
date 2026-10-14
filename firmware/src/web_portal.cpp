@@ -7,6 +7,9 @@
 #include <esp_heap_caps.h>
 
 #include "app_config.h"
+#include "config.h"
+#include "device_log.h"
+#include "display_capture.h"
 #include "display_poll.h"
 #include "ota_update.h"
 #include "printer_list.h"
@@ -216,6 +219,12 @@ void handleRoot() {
        ".dot{width:7px;height:7px;border-radius:50%;background:var(--accent);"
        "box-shadow:0 0 8px var(--accent)}"
        ".dot-warn{background:var(--warn);box-shadow:0 0 8px var(--warn)}"
+       ".tabs{display:flex;gap:6px;margin:-4px 0 18px;padding:5px;background:#0b1017;"
+       "border:1px solid var(--border-soft);border-radius:10px;width:max-content}"
+       ".tab{padding:7px 13px;border-radius:6px;color:var(--muted);font-size:12px;font-weight:650;"
+       "text-decoration:none;transition:background .15s,color .15s}"
+       ".tab:hover{color:var(--text);background:var(--card-2)}"
+       ".tab.active{color:#07120d;background:var(--accent)}"
        /* Security Banner */
        ".banner-warn{display:flex;align-items:center;justify-content:space-between;gap:12px;"
        "padding:13px 18px;margin-bottom:18px;border-radius:11px;"
@@ -322,7 +331,11 @@ void handleRoot() {
   h += "</strong></span>"
        "<span class='chip'>HEAP <strong>";
   h += String(freeHeapKb);
-  h += " KB</strong></span></div></header>";
+  h += " KB</strong></span></div></header>"
+       "<nav class='tabs' aria-label='Console sections'>"
+       "<a class='tab active' href='/'>Configuration</a>"
+       "<a class='tab' href='/diagnostics'>Diagnostics</a>"
+       "</nav>";
 
   // 2. Security Warning if no password is set
   if (c.otaPassword.length() == 0) {
@@ -427,8 +440,6 @@ void handleRoot() {
              "Example: http://192.168.1.50:8000 (leave blank to use MQTT only)",
              "http://192.168.1.50:8000");
   h += pwField("FilaMan API Key", "fmKey", "Bearer token for the FilaMan Display API");
-  h += field("Pinned Printer ID", "fmPrinter", String(c.filamanPrinterId), "number",
-             "Set to 0 for automatic selection or use the Monitored Printer card above");
   h += toggleField("Allow Self-Signed LAN TLS",
                    "Skip certificate verification when connecting to FilaMan over local HTTPS",
                    "fmTls", c.filamanTlsInsecure);
@@ -593,6 +604,198 @@ void handleGithubUpdate() {
   ESP.restart();
 }
 
+void handleDiagnostics() {
+  if (!authOK()) {
+    return;
+  }
+  const uint32_t uptimeSec = millis() / 1000UL;
+  const uint32_t hours = uptimeSec / 3600UL;
+  const uint32_t minutes = (uptimeSec % 3600UL) / 60UL;
+  const String ip =
+      WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString() : String("Offline");
+
+  String h;
+  h.reserve(8500);
+  h +=
+      "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
+      "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+      "<title>Diagnostics - Filaman Digital Swatches</title><style>"
+      ":root{--bg:#070a0f;--card:#111823;--card2:#151f2d;--border:#222f42;"
+      "--soft:#1a2433;--text:#eef2f7;--muted:#8a99ad;--dim:#59687b;"
+      "--accent:#3ddc97;--danger:#ff5c6a;--mono:'JetBrains Mono',ui-monospace,"
+      "SFMono-Regular,Menlo,Consolas,monospace}"
+      "*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse 90% 45% at 50% -10%,"
+      "rgba(61,220,151,.10),transparent 70%),var(--bg);color:var(--text);"
+      "font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;"
+      "font-size:14px;-webkit-font-smoothing:antialiased}"
+      ".shell{max-width:1020px;margin:auto;padding:24px 18px 56px}"
+      ".top{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px;"
+      "padding:18px 22px;background:rgba(17,24,35,.9);border:1px solid var(--border);"
+      "border-radius:14px;margin-bottom:18px;box-shadow:0 14px 34px rgba(0,0,0,.35)}"
+      ".brand{display:flex;align-items:center;gap:13px}.mark{display:grid;"
+      "grid-template-columns:repeat(4,6px);gap:3px;padding:7px;background:#0a0f16;"
+      "border:1px solid var(--border);border-radius:10px;height:40px}.mark i{border-radius:2px}"
+      ".mark i:nth-child(1){background:#3ddc97}.mark i:nth-child(2){background:#5aa7ff}"
+      ".mark i:nth-child(3){background:#ffb443}.mark i:nth-child(4){background:#ff5c6a}"
+      "h1{font-size:18px;margin:0;letter-spacing:-.02em}.sub{color:var(--muted);font-size:12px;margin-top:2px}"
+      ".live{display:flex;align-items:center;gap:7px;font:12px var(--mono);color:var(--muted);"
+      "padding:5px 11px;background:#0d131c;border:1px solid var(--border);border-radius:99px}"
+      ".dot{width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px var(--accent)}"
+      ".tabs{display:flex;gap:6px;margin:-4px 0 18px;padding:5px;background:#0b1017;"
+      "border:1px solid var(--soft);border-radius:10px;width:max-content}"
+      ".tab{padding:7px 13px;border-radius:6px;color:var(--muted);font-size:12px;font-weight:650;"
+      "text-decoration:none}.tab.active{color:#07120d;background:var(--accent)}"
+      ".metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:16px}"
+      "@media(min-width:700px){.metrics{grid-template-columns:repeat(4,minmax(0,1fr))}}"
+      ".metric,.card{background:var(--card);border:1px solid var(--border);border-radius:12px;"
+      "box-shadow:inset 0 1px 0 rgba(255,255,255,.03),0 8px 24px rgba(0,0,0,.22)}"
+      ".metric{padding:14px 16px}.metric span{display:block;color:var(--dim);font-size:10px;"
+      "font-weight:700;letter-spacing:.09em;text-transform:uppercase;margin-bottom:6px}"
+      ".metric strong{font:600 16px var(--mono);color:var(--text)}"
+      ".grid{display:grid;grid-template-columns:1fr;gap:16px}"
+      "@media(min-width:760px){.grid{grid-template-columns:minmax(0,1.65fr) minmax(260px,.7fr)}}"
+      ".card{padding:20px 22px}.head{display:flex;align-items:flex-start;justify-content:space-between;"
+      "gap:12px;padding-bottom:12px;margin-bottom:14px;border-bottom:1px solid var(--soft)}"
+      ".eyebrow{display:block;color:var(--accent);font-size:10px;font-weight:700;"
+      "letter-spacing:.1em;text-transform:uppercase;margin-bottom:3px}"
+      "h2{font-size:16px;margin:0}.desc{color:var(--muted);font-size:12px;margin:4px 0 0;line-height:1.5}"
+      ".actions{display:flex;flex-wrap:wrap;gap:9px}.btn{display:inline-flex;justify-content:center;"
+      "align-items:center;padding:9px 14px;border-radius:8px;border:1px solid var(--border);"
+      "background:var(--card2);color:var(--text);font:650 12px inherit;text-decoration:none;cursor:pointer}"
+      ".btn.primary{background:var(--accent);border-color:var(--accent);color:#07120d}"
+      ".btn.danger{color:#ff9ca5;border-color:rgba(255,92,106,.4)}"
+      "pre{height:390px;margin:0;padding:14px;overflow:auto;background:#070b10;"
+      "border:1px solid var(--soft);border-radius:8px;color:#b9c8d9;font:11px/1.55 var(--mono);"
+      "white-space:pre-wrap;overflow-wrap:anywhere}"
+      ".shot{aspect-ratio:5/3;border:1px solid var(--soft);border-radius:9px;margin-bottom:13px;"
+      "background:linear-gradient(135deg,#0c131c,#152335);display:flex;align-items:center;"
+      "justify-content:center;color:var(--dim);font:12px var(--mono);text-align:center;padding:20px}"
+      ".note{color:var(--muted);font-size:11px;line-height:1.5;margin:10px 0 0}"
+      "</style></head><body><main class='shell'>"
+      "<header class='top'><div class='brand'><div class='mark'><i></i><i></i><i></i><i></i></div>"
+      "<div><h1>System Diagnostics</h1><div class='sub'>Filaman Digital Swatches hardware console</div>"
+      "</div></div><div class='live'><span class='dot'></span>LIVE &nbsp; v";
+  h += esc(String(FIRMWARE_VERSION));
+  h += "</div></header><nav class='tabs' aria-label='Console sections'>"
+       "<a class='tab' href='/'>Configuration</a>"
+       "<a class='tab active' href='/diagnostics'>Diagnostics</a></nav>"
+       "<section class='metrics'><div class='metric'><span>Uptime</span><strong>";
+  h += String(hours) + "h " + String(minutes) + "m";
+  h += "</strong></div><div class='metric'><span>Free Heap</span><strong>";
+  h += String(static_cast<uint32_t>(ESP.getFreeHeap()) / 1024U) + " KB";
+  h += "</strong></div><div class='metric'><span>Free PSRAM</span><strong>";
+  h += String(static_cast<uint32_t>(ESP.getFreePsram()) / 1024U) + " KB";
+  h += "</strong></div><div class='metric'><span>Wi-Fi RSSI</span><strong>";
+  h += WiFi.status() == WL_CONNECTED ? String(WiFi.RSSI()) + " dBm" : String("--");
+  h += "</strong></div><div class='metric'><span>IP Address</span><strong>";
+  h += esc(ip);
+  h += "</strong></div><div class='metric'><span>Data Source</span><strong>";
+  h += esc(display_poll_active() ? display_poll_status() : String("MQTT"));
+  h += "</strong></div><div class='metric'><span>Min Free Heap</span><strong>";
+  h += String(static_cast<uint32_t>(ESP.getMinFreeHeap()) / 1024U) + " KB";
+  h += "</strong></div><div class='metric'><span>Update Status</span><strong>";
+  h += ota_update_available() ? String("Available") : String("Current");
+  h += "</strong></div></section>"
+       "<div class='grid'><section class='card'><div class='head'><div>"
+       "<span class='eyebrow'>Recent Events</span><h2>Firmware Log</h2>"
+       "<p class='desc'>Connection, API polling, update, and recovery events from this boot.</p>"
+       "</div><div class='actions'><button class='btn' id='pause'>Pause</button>"
+       "<button class='btn danger' id='clear'>Clear</button></div></div>"
+       "<pre id='log'>Loading log...</pre></section>"
+       "<aside class='card'><div class='head'><div><span class='eyebrow'>Panel Output</span>"
+       "<h2>Display Screenshot</h2><p class='desc'>Capture the current 800 x 480 framebuffer.</p>"
+       "</div></div><div class='shot'>RGB565 framebuffer<br>800 x 480</div>"
+       "<a class='btn primary' style='width:100%' href='/screenshot.bmp' download='filaman-display.bmp'>"
+       "Download Current Screenshot</a>"
+       "<p class='note'>The image reflects the exact screen currently visible on the panel. "
+       "The download may take several seconds while the framebuffer is converted to BMP.</p></aside></div>"
+       "<script>"
+       "let paused=false;const log=document.getElementById('log'),pause=document.getElementById('pause');"
+       "async function load(){if(paused)return;try{const r=await fetch('/diagnostics/logs',{cache:'no-store'});"
+       "if(r.ok){const atBottom=log.scrollTop+log.clientHeight>=log.scrollHeight-24;"
+       "log.textContent=await r.text();if(atBottom)log.scrollTop=log.scrollHeight;}}catch(e){}}"
+       "pause.onclick=()=>{paused=!paused;pause.textContent=paused?'Resume':'Pause';};"
+       "document.getElementById('clear').onclick=async()=>{await fetch('/diagnostics/logs',{method:'DELETE'});"
+       "paused=false;pause.textContent='Pause';load();};load();setInterval(load,2500);"
+       "</script></main></body></html>";
+  server.send(200, "text/html", h);
+}
+
+void handleDiagnosticLogs() {
+  if (!authOK()) {
+    return;
+  }
+  server.sendHeader("Cache-Control", "no-store");
+  if (server.method() == HTTP_DELETE) {
+    device_log_clear();
+    server.send(200, "text/plain", "Diagnostics log cleared\n");
+    return;
+  }
+  server.send(200, "text/plain", device_log_snapshot());
+}
+
+void putLe16(uint8_t *p, uint16_t value) {
+  p[0] = static_cast<uint8_t>(value);
+  p[1] = static_cast<uint8_t>(value >> 8);
+}
+
+void putLe32(uint8_t *p, uint32_t value) {
+  p[0] = static_cast<uint8_t>(value);
+  p[1] = static_cast<uint8_t>(value >> 8);
+  p[2] = static_cast<uint8_t>(value >> 16);
+  p[3] = static_cast<uint8_t>(value >> 24);
+}
+
+void handleScreenshot() {
+  if (!authOK()) {
+    return;
+  }
+  const uint16_t *framebuffer = display_framebuffer_rgb565();
+  if (!framebuffer) {
+    server.send(503, "text/plain", "Display framebuffer unavailable");
+    return;
+  }
+
+  constexpr uint32_t rowBytes = SCREEN_WIDTH * 3;
+  constexpr uint32_t pixelBytes = rowBytes * SCREEN_HEIGHT;
+  constexpr uint32_t fileBytes = 54 + pixelBytes;
+  uint8_t header[54] = {};
+  header[0] = 'B';
+  header[1] = 'M';
+  putLe32(header + 2, fileBytes);
+  putLe32(header + 10, 54);
+  putLe32(header + 14, 40);
+  putLe32(header + 18, SCREEN_WIDTH);
+  putLe32(header + 22, SCREEN_HEIGHT);
+  putLe16(header + 26, 1);
+  putLe16(header + 28, 24);
+  putLe32(header + 34, pixelBytes);
+
+  device_log("Web screenshot capture started");
+  server.sendHeader("Cache-Control", "no-store");
+  server.sendHeader("Content-Disposition", "attachment; filename=filaman-display.bmp");
+  server.setContentLength(fileBytes);
+  server.send(200, "image/bmp", "");
+  WiFiClient client = server.client();
+  client.write(header, sizeof(header));
+
+  uint8_t row[rowBytes];
+  for (int y = SCREEN_HEIGHT - 1; y >= 0; --y) {
+    const uint16_t *src = framebuffer + static_cast<size_t>(y) * SCREEN_WIDTH;
+    for (int x = 0; x < SCREEN_WIDTH; ++x) {
+      const uint16_t pixel = src[x];
+      row[x * 3 + 0] = static_cast<uint8_t>((pixel & 0x1F) * 255 / 31);
+      row[x * 3 + 1] = static_cast<uint8_t>(((pixel >> 5) & 0x3F) * 255 / 63);
+      row[x * 3 + 2] = static_cast<uint8_t>(((pixel >> 11) & 0x1F) * 255 / 31);
+    }
+    client.write(row, sizeof(row));
+    if ((y & 0x0F) == 0) {
+      yield();
+    }
+  }
+  device_log("Web screenshot capture completed");
+}
+
 }  // namespace
 
 void web_portal_begin() {
@@ -603,6 +806,10 @@ void web_portal_begin() {
   server.on("/save", HTTP_POST, handleSave);
   server.on("/printer", HTTP_POST, handlePrinter);
   server.on("/github-update", HTTP_POST, handleGithubUpdate);
+  server.on("/diagnostics", HTTP_GET, handleDiagnostics);
+  server.on("/diagnostics/logs", HTTP_GET, handleDiagnosticLogs);
+  server.on("/diagnostics/logs", HTTP_DELETE, handleDiagnosticLogs);
+  server.on("/screenshot.bmp", HTTP_GET, handleScreenshot);
   // Browser firmware upload over WiFi at /update (writes the inactive OTA slot).
   if (config().otaPassword.length()) {
     httpUpdater.setup(&server, "/update", "admin", config().otaPassword.c_str());

@@ -9,6 +9,7 @@
 
 #include "app_config.h"
 #include "config.h"
+#include "device_log.h"
 #include "filaman_client.h"
 #include "models.h"
 #include "printer_list.h"
@@ -304,7 +305,7 @@ bool heapAllowsPoll() {
   const unsigned long now = millis();
   if (now - lastLowHeapLogMs >= 5000) {
     lastLowHeapLogMs = now;
-    Serial.printf("display_poll: free heap %u, waiting\n", freeHeap);
+    device_logf("display_poll: free heap %u, waiting", freeHeap);
   }
   return false;
 }
@@ -663,7 +664,7 @@ void refreshPrinterList() {
   FmResult r = filaman.listBambuddyPrinters(printers, MAX_PRINTER_OPTIONS, count, activeId);
   if (!r.ok) {
     snprintf(pollStatus, sizeof(pollStatus), "list: %.80s", r.error.c_str());
-    Serial.printf("display_poll: printer list failed: %s\n", r.error.c_str());
+    device_logf("display_poll: printer list failed: %s", r.error.c_str());
     return;
   }
 
@@ -685,12 +686,12 @@ void refreshPrinterList() {
       }
     }
     if (pinned > 0 && chosen > 0 && chosen != pinned) {
-      Serial.printf("display_poll: printer %d is gone; using %d\n", pinned, chosen);
+      device_logf("display_poll: printer %d is gone; using %d", pinned, chosen);
       config().setFilamanPrinterId(chosen);
     }
   }
   if (chosen > 0 && chosen != activePrinterId) {
-    Serial.printf("display_poll: monitoring printer %d\n", chosen);
+    device_logf("display_poll: monitoring printer %d", chosen);
     activePrinterId = chosen;
   }
   for (int i = 0; i < count; ++i) {
@@ -738,7 +739,7 @@ void pollSnapshot() {
       consecutiveFails++;
     }
     snprintf(pollStatus, sizeof(pollStatus), "snapshot: %.80s", r.error.c_str());
-    Serial.printf("display_poll: snapshot failed: %s\n", r.error.c_str());
+    device_logf("display_poll: snapshot failed: %s", r.error.c_str());
     ui_set_connection_status(String("FilaMan: ") + r.error);
     return;
   }
@@ -748,7 +749,7 @@ void pollSnapshot() {
       consecutiveFails++;
     }
     snprintf(pollStatus, sizeof(pollStatus), "snapshot: empty printer[]");
-    Serial.println("display_poll: snapshot missing printers[0]");
+    device_log("display_poll: snapshot missing printers[0]");
     ui_set_connection_status("FilaMan: empty printer response");
     return;
   }
