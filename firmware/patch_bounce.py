@@ -37,4 +37,27 @@ def patch():
         print("[patch_bounce] bb_invalidate_cache already enabled")
 
 
+# The panel handle is private. panelStopScanout() needs it to delete the
+# driver (and its bounce-buffer ISR) before a new image is verified.
+HEADER = TARGET[: -len(".cpp")] + ".h"
+GETTER = "  esp_lcd_panel_handle_t panelHandle() const { return _panel_handle; }\n"
+
+
+def patch_header():
+    if not os.path.isfile(HEADER):
+        print("[patch_bounce] header not found yet: %s" % HEADER)
+        return
+    with open(HEADER, "r") as handle:
+        src = handle.read()
+    if GETTER in src:
+        return
+    anchor = "  uint16_t *getFrameBuffer(int16_t w, int16_t h);\n"
+    if anchor not in src:
+        raise SystemExit("[patch_bounce] getFrameBuffer anchor missing in %s" % HEADER)
+    with open(HEADER, "w") as handle:
+        handle.write(src.replace(anchor, anchor + GETTER, 1))
+    print("[patch_bounce] added panelHandle()")
+
+
 patch()
+patch_header()

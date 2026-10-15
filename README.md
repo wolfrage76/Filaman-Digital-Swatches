@@ -2,7 +2,7 @@
 
 A 7″ touchscreen for Bambu Lab AMS trays and print status. The panel talks to [FilaMan](https://www.filaman.app). It runs on two ESP32-S3 boards. They share the same screens and they do not share firmware.
 
-**Firmware** `0.21.3` · [Web Flasher](https://wolfrage76.github.io/Filaman-Digital-Swatches/) · [Releases](https://github.com/wolfrage76/Filaman-Digital-Swatches/releases)
+**Firmware** `0.21.4` · [Web Flasher](https://wolfrage76.github.io/Filaman-Digital-Swatches/) · [Releases](https://github.com/wolfrage76/Filaman-Digital-Swatches/releases)
 
 The GitHub repository is still [Filaman-Digital-Swatches](https://github.com/wolfrage76/Filaman-Digital-Swatches). Panels already installed check that Pages site for updates, so the repo address stays.
 

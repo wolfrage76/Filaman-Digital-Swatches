@@ -39,3 +39,9 @@ void panelSetBrightness(uint8_t brightness);
 
 void panelBacklightOff();
 void panelBacklightOn(uint8_t brightness);
+
+// Stop RGB scanout for good (backlight off, driver deleted). The bounce-buffer
+// ISR copies from the PSRAM framebuffer and crashes with a CacheError if it
+// fires while the firmware remaps flash to verify a new image. Called just
+// before the boot partition switches; only a reboot brings the screen back.
+void panelStopScanout();
