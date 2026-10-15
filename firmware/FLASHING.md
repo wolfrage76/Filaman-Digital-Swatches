@@ -1,4 +1,4 @@
-# Flashing
+# Flashing Digital Swatch System
 
 Firmware **v0.21.1**. CrowPanel and Waveshare share the UI and use different images. Do not cross-flash. The running firmware rejects an image whose embedded board id does not match.
 
