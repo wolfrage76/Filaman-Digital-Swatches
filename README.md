@@ -2,7 +2,7 @@
 
 A 7″ touchscreen for Bambu Lab AMS trays and print status. The panel talks to [FilaMan](https://www.filaman.app). It runs on two ESP32-S3 boards. They share the same screens and they do not share firmware.
 
-**Firmware** `0.21.2` · [Web Flasher](https://wolfrage76.github.io/Filaman-Digital-Swatches/) · [Releases](https://github.com/wolfrage76/Filaman-Digital-Swatches/releases)
+**Firmware** `0.21.3` · [Web Flasher](https://wolfrage76.github.io/Filaman-Digital-Swatches/) · [Releases](https://github.com/wolfrage76/Filaman-Digital-Swatches/releases)
 
 The GitHub repository is still [Filaman-Digital-Swatches](https://github.com/wolfrage76/Filaman-Digital-Swatches). Panels already installed check that Pages site for updates, so the repo address stays.
 
@@ -20,8 +20,10 @@ Flash only the section that matches the panel in front of you. A CrowPanel image
 | Flash | 4 MB | 16 MB |
 | USB | CH340 serial adapter. Install the driver if the port is missing. | Native USB. If no port appears, hold **BOOT**, tap **RESET**, release **BOOT**. |
 | Web flasher | CrowPanel section | Waveshare section |
-| After setup | [http://crowpanel.local/](http://crowpanel.local/) | [http://waveshare-ams.local/](http://waveshare-ams.local/) |
+| After setup | `http://crowpanel-xxxx.local/` | `http://waveshare-xxxx.local/` |
 | GitHub update file | `firmware.bin` | `firmware-waveshare-s3-lcd7.bin` |
+
+`xxxx` is the last four hex digits of the panel's Wi‑Fi MAC address, so several panels on one network get different names. **≡ → System** shows the panel's address and hostname.
 
 `firmware.bin` is the same bytes as `firmware-crowpanel-s3-lcd7.bin`. Older CrowPanel firmware still looks for that name.
 
@@ -53,7 +55,7 @@ Open the flasher and stay inside your board’s card.
 
 The header Wi‑Fi icon turns green when FilaMan is linked, amber while it is still connecting, and a red `×` when Wi‑Fi itself failed.
 
-Two panels of the same board on one network need different **Hostname** values. Both ship with the same default.
+Each panel's default **Hostname** ends in part of its MAC address, so panels on one network don't collide. Clear the field to go back to the default.
 
 ## What you see
 
@@ -109,13 +111,13 @@ cd firmware
 
 A local build behaves like the public images: set Wi‑Fi and FilaMan on the panel, and they stay in its settings storage across updates.
 
-`include/secrets.h` is optional. Copy `include/secrets.h.example` only if you want compile-time defaults (Wi‑Fi, FilaMan URL, API key, OTA password, hostname) for panels you flash yourself. The first boot of such a build saves those values to the panel. `OTA_HOSTNAME` there overrides the board default (`crowpanel`, `waveshare-ams`) on every image you compile.
+`include/secrets.h` is optional. Copy `include/secrets.h.example` only if you want compile-time defaults (Wi‑Fi, FilaMan URL, API key, OTA password, hostname) for panels you flash yourself. The first boot of such a build saves those values to the panel. `OTA_HOSTNAME` there replaces the generated default hostname on every image you compile, so leave it out if you flash more than one panel.
 
 `./ota.sh` builds and sends the **CrowPanel** image only. It uses `OTA_PASSWORD` from the environment, or from `secrets.h` if present, or no password. For Waveshare:
 
 ```bash
 OTA_PASSWORD=yourpass ../.venv/bin/pio run -e waveshare-s3-lcd7_ota -t upload \
-  --upload-port waveshare-ams.local
+  --upload-port waveshare-xxxx.local
 ```
 
 Leave `OTA_PASSWORD` unset when the panel has no password.

@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # OTA-flash the crowpanel_7_idf build over WiFi (no CH340). Builds once with the
-# normal env, then pushes the same binary via ArduinoOTA to crowpanel.local.
+# normal env, then pushes the same binary via ArduinoOTA to the given panel.
 # The OTA password (never printed) is the one set on the panel's web config page.
 # It comes from $OTA_PASSWORD, else OTA_PASSWORD in include/secrets.h if that
 # file exists, else none (a panel with no password set).
 #
-# Usage:  ./ota.sh
+# Usage:  ./ota.sh crowpanel-3f2a.local
 #         ./ota.sh 192.168.1.50
-#         OTA_PASSWORD=yourpass ./ota.sh
+#         OTA_PASSWORD=yourpass ./ota.sh crowpanel-3f2a.local
 # USB-flash (pio run -e crowpanel_7_idf -t upload) any DISPLAY-DRIVER change first;
 # OTA is safe for UI/logic changes only.
 set -euo pipefail
@@ -15,7 +15,7 @@ cd "$(dirname "$0")"
 
 PIO="../.venv/bin/pio"
 BIN=".pio/build/crowpanel_7_idf/firmware.bin"
-HOST="${1:-crowpanel.local}"   # override with an IP as arg 1 if mDNS is flaky
+HOST="${1:?usage: ./ota.sh <panel hostname.local or IP>}"   # see Menu > System
 
 PW="${OTA_PASSWORD:-}"
 if [ -z "$PW" ] && [ -f include/secrets.h ]; then

@@ -48,12 +48,11 @@
 #define FILAMAN_TLS_INSECURE 1
 #endif
 
-constexpr const char *FIRMWARE_VERSION = "0.21.2";
+constexpr const char *FIRMWARE_VERSION = "0.21.3";
 constexpr int MQTT_SCHEMA_VERSION = 2;
 
-#ifndef OTA_HOSTNAME
-#define OTA_HOSTNAME "crowpanel"
-#endif
+// OTA_HOSTNAME (secrets.h, optional) replaces the generated default hostname,
+// <BOARD_DEFAULT_HOSTNAME>-<last 4 hex of the WiFi MAC>.
 
 // POSIX TZ for the finish-time clock. Override in secrets.h. UTC0 if unset.
 #ifndef DISPLAY_TIMEZONE
