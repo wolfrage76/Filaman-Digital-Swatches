@@ -93,6 +93,8 @@ Each panel's default **Hostname** ends in part of its MAC address, so panels on 
 - **From a browser on the LAN:** open `http://<panel-ip>/update` as user `admin` and upload that board's `.bin`.
 - **Over USB:** **Keep Settings & Update** for that board on the web flasher.
 
+To test new features early, turn on **Include beta releases** on the panel's Firmware Update screen or on the web config page. The panel then also offers GitHub pre-releases. The web flasher only installs stable releases.
+
 > [!NOTE]
 > A panel you flashed from source can be newer than the version published on GitHub. The screen then says you are ahead. That is not a failed check.
 

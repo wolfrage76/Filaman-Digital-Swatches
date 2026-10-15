@@ -126,6 +126,7 @@ void AppConfig::load() {
     displayTimezone = DISPLAY_TIMEZONE;
   }
   autoCheckUpdates = p.getBool("autoOta", false);
+  betaUpdates = p.getBool("beta", false);
 #if __has_include("secrets.h")
   // Settings never saved from the UI live only as secrets.h macros. Persist
   // them so a later OTA to a public build (placeholder defaults) keeps them.
@@ -177,6 +178,7 @@ void AppConfig::save() const {
   p.putInt("idleSec", idleReturnSec);
   p.putString("tz", displayTimezone);
   p.putBool("autoOta", autoCheckUpdates);
+  p.putBool("beta", betaUpdates);
   p.end();
 }
 
@@ -286,5 +288,16 @@ void AppConfig::setAutoCheckUpdates(bool enabled) {
   Preferences p;
   p.begin(kNs, /*readOnly=*/false);
   p.putBool("autoOta", autoCheckUpdates);
+  p.end();
+}
+
+void AppConfig::setBetaUpdates(bool enabled) {
+  if (enabled == betaUpdates) {
+    return;
+  }
+  betaUpdates = enabled;
+  Preferences p;
+  p.begin(kNs, /*readOnly=*/false);
+  p.putBool("beta", betaUpdates);
   p.end();
 }

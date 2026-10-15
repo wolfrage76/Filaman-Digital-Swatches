@@ -13,7 +13,9 @@ void ota_install_stamp_loop();
 uint32_t ota_installed_at();
 
 // Compare semantic versions (ignoring leading 'v'). Returns >0 if a > b, 0 if equal, <0 if a < b.
+// A pre-release ("0.23.0-beta.1") sorts before its release ("0.23.0").
 int ota_compare_versions(const String &a, const String &b);
+bool ota_is_prerelease(const String &version);  // has a "-tag" suffix
 
 // Check GitHub for the latest published firmware version.
 bool ota_check_github_update(String &latestVersionOut, String &downloadUrlOut, String &errorOut);
@@ -32,3 +34,4 @@ void ota_auto_check_request_now();  // run on next eligible loop (e.g. after ena
 bool ota_update_available();
 String ota_cached_latest_version();
 String ota_cached_download_url();
+void ota_forget_latest();  // drop the cached result, e.g. after changing channel

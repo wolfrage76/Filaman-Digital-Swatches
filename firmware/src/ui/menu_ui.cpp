@@ -1312,6 +1312,16 @@ void onAutoCheckToggle(lv_event_t *) {
   }
 }
 
+void onBetaToggle(lv_event_t *) {
+  const bool enabled = !config().betaUpdates;
+  config().setBetaUpdates(enabled);
+  ota_forget_latest();  // the cached version belongs to the other channel
+  latestGithubVer = "";
+  latestGithubUrl = "";
+  showUpdate();         // redraw the toggle even if the check below fails
+  runGithubCheck();
+}
+
 void onInstallGithubUpdate(lv_event_t *) {
   touch_input_cooldown(500);
   if (updateProgressBar) {
@@ -1411,7 +1421,10 @@ void showUpdate() {
   addVerCell(verRow, "Installed", installed.c_str(), false);
   if (hasLatest) {
     const String remote = String("v") + latestGithubVer;
-    addVerCell(verRow, newerAvailable ? "GitHub (new)" : "GitHub", remote.c_str(), newerAvailable);
+    const bool beta = ota_is_prerelease(latestGithubVer);
+    const char *eyebrow = beta ? (newerAvailable ? "Beta (new)" : "Beta")
+                               : (newerAvailable ? "GitHub (new)" : "GitHub");
+    addVerCell(verRow, eyebrow, remote.c_str(), newerAvailable);
   } else {
     addVerCell(verRow, "GitHub", "Not checked", false);
   }
@@ -1445,6 +1458,10 @@ void showUpdate() {
   autoCheckLabel = lv_obj_get_child(autoBtn, 0);
   if (autoCheckLabel) {
     lv_label_set_text(autoCheckLabel, "Automatically check for updates");
+  }
+  lv_obj_t *betaBtn = makeToggleAction(col, config().betaUpdates, onBetaToggle);
+  if (lv_obj_t *betaLabel = lv_obj_get_child(betaBtn, 0)) {
+    lv_label_set_text(betaLabel, "Include beta releases");
   }
 }
 

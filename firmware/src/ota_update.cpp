@@ -39,8 +39,12 @@ bool sawWifiConnected = false;
 constexpr unsigned long kAutoCheckFirstDelayMs = 90UL * 1000UL;
 constexpr unsigned long kAutoCheckIntervalMs = 60UL * 60UL * 1000UL;
 
+// releases/latest never returns a pre-release, so stable panels can't see betas.
 constexpr const char *kReleasesApiUrl =
     "https://api.github.com/repos/" PROJECT_GITHUB_REPO "/releases/latest";
+// Newest releases first, pre-releases included. Only read on the beta channel.
+constexpr const char *kReleasesListUrl =
+    "https://api.github.com/repos/" PROJECT_GITHUB_REPO "/releases?per_page=5";
 constexpr const char *kPagesBase =
     "https://wolfrage76.github.io/Filaman-Digital-Swatches/";
 // Shared version stamp (always published). Board-specific manifests may lag.
@@ -127,6 +131,105 @@ void parseVersionParts(const String &v, int parts[3]) {
   sscanf(s.c_str(), "%d.%d.%d", &parts[0], &parts[1], &parts[2]);
 }
 
+// "beta.2" from "0.23.0-beta.2"; empty for a stable version.
+String prereleaseTag(const String &v) {
+  const String s = cleanVersion(v);
+  const int dash = s.indexOf('-');
+  return dash < 0 ? String() : s.substring(dash + 1);
+}
+
+// Semver order for pre-release tags: dot-separated parts, numbers compared as
+// numbers, so beta.10 > beta.9 and rc.1 > beta.3.
+int comparePrereleaseTags(const String &a, const String &b) {
+  int ia = 0, ib = 0;
+  while (ia < (int)a.length() || ib < (int)b.length()) {
+    if (ia >= (int)a.length()) return -1;
+    if (ib >= (int)b.length()) return 1;
+    int ea = a.indexOf('.', ia);
+    int eb = b.indexOf('.', ib);
+    if (ea < 0) ea = a.length();
+    if (eb < 0) eb = b.length();
+    const String pa = a.substring(ia, ea);
+    const String pb = b.substring(ib, eb);
+    const bool na = pa.length() && isDigit(pa[0]);
+    const bool nb = pb.length() && isDigit(pb[0]);
+    int d;
+    if (na && nb) {
+      d = pa.toInt() - pb.toInt();
+    } else if (na != nb) {
+      d = na ? -1 : 1;  // numeric parts sort before words
+    } else {
+      d = pa.compareTo(pb);
+    }
+    if (d != 0) return d;
+    ia = ea + 1;
+    ib = eb + 1;
+  }
+  return 0;
+}
+
+// Newest GitHub pre-release that carries this board's app image. The list
+// response is large (release notes, asset metadata), so it is filtered while
+// streaming instead of being read into a String.
+bool fetchNewestPrerelease(String &versionOut, String &urlOut, String &errorOut) {
+  versionOut = "";
+  urlOut = "";
+  WiFiClientSecure secure;
+  secure.setInsecure();
+  HTTPClient http;
+  http.setTimeout(10000);
+  http.setReuse(false);
+  http.useHTTP10(true);  // no chunked encoding, so the stream is plain JSON
+  http.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
+  if (!http.begin(secure, kReleasesListUrl)) {
+    errorOut = "GitHub connection failed";
+    return false;
+  }
+  http.addHeader("User-Agent", String("DigitalSwatchSystem/") + BOARD_ID);
+  http.addHeader("Accept", "application/vnd.github+json");
+  const int code = http.GET();
+  if (code != 200) {
+    drainHttp(http);
+    http.end();
+    errorOut = String("GitHub HTTP ") + code;
+    return false;
+  }
+  JsonDocument filter;
+  filter[0]["tag_name"] = true;
+  filter[0]["prerelease"] = true;
+  filter[0]["draft"] = true;
+  filter[0]["assets"][0]["name"] = true;
+  filter[0]["assets"][0]["browser_download_url"] = true;
+  JsonDocument doc;
+  const DeserializationError err =
+      deserializeJson(doc, http.getStream(), DeserializationOption::Filter(filter));
+  http.end();
+  if (err) {
+    errorOut = "GitHub release list parse failed";
+    return false;
+  }
+  for (JsonObject rel : doc.as<JsonArray>()) {
+    if (!(rel["prerelease"] | false) || (rel["draft"] | false)) {
+      continue;
+    }
+    const String ver = cleanVersion(rel["tag_name"] | "");
+    if (!ver.length() ||
+        (versionOut.length() && ota_compare_versions(ver, versionOut) <= 0)) {
+      continue;
+    }
+    for (JsonObject asset : rel["assets"].as<JsonArray>()) {
+      const String name = asset["name"] | "";
+      const String url = asset["browser_download_url"] | "";
+      if (url.length() && name == BOARD_OTA_ASSET) {
+        versionOut = ver;
+        urlOut = url;
+        break;
+      }
+    }
+  }
+  return versionOut.length() > 0;
+}
+
 void rememberCheckResult(const String &ver, const String &url) {
   cachedLatestVersion = ver;
   cachedDownloadUrl = url;
@@ -165,7 +268,17 @@ int ota_compare_versions(const String &a, const String &b) {
       return pa[i] - pb[i];
     }
   }
-  return 0;
+  // Same x.y.z: a pre-release sorts before the release (0.23.0-beta.1 < 0.23.0).
+  const String ta = prereleaseTag(a);
+  const String tb = prereleaseTag(b);
+  if (!ta.length() && !tb.length()) return 0;
+  if (!ta.length()) return 1;
+  if (!tb.length()) return -1;
+  return comparePrereleaseTags(ta, tb);
+}
+
+bool ota_is_prerelease(const String &version) {
+  return prereleaseTag(version).length() > 0;
 }
 
 bool ota_check_github_update(String &latestVersionOut, String &downloadUrlOut, String &errorOut) {
@@ -258,6 +371,23 @@ bool ota_check_github_update(String &latestVersionOut, String &downloadUrlOut, S
     }
   }
 
+  // 3. Beta channel: a newer pre-release wins over the stable version. Once
+  // the matching release ships it is newer again, so testers rejoin stable.
+  if (config().betaUpdates) {
+    String betaVer, betaUrl, betaErr;
+    if (fetchNewestPrerelease(betaVer, betaUrl, betaErr)) {
+      if (!latestVersionOut.length() || ota_compare_versions(betaVer, latestVersionOut) > 0) {
+        latestVersionOut = betaVer;
+        downloadUrlOut = betaUrl;
+      }
+      errorOut = "";
+    } else if (betaErr.length() && !latestVersionOut.length()) {
+      errorOut = betaErr;
+    } else if (betaErr.length()) {
+      device_logf("Beta check: %s", betaErr.c_str());
+    }
+  }
+
   if (!latestVersionOut.length()) {
     if (!errorOut.length()) {
       errorOut = "Could not read version from GitHub";
@@ -272,7 +402,8 @@ bool ota_check_github_update(String &latestVersionOut, String &downloadUrlOut, S
   // Until renamed board assets are on Pages, CrowPanel can still fetch the
   // legacy shared firmware.bin used by the published update manifest.
 #if !defined(BOARD_WAVESHARE_S3_LCD7)
-  if (downloadUrlOut.endsWith(BOARD_OTA_ASSET)) {
+  // Betas exist only as GitHub release assets; Pages carries the stable image.
+  if (!ota_is_prerelease(latestVersionOut) && downloadUrlOut.endsWith(BOARD_OTA_ASSET)) {
     downloadUrlOut = String(kPagesBase) + "firmware/firmware.bin";
   }
 #endif
@@ -510,6 +641,12 @@ bool ota_update_available() {
 String ota_cached_latest_version() { return cachedLatestVersion; }
 
 String ota_cached_download_url() { return cachedDownloadUrl; }
+
+void ota_forget_latest() {
+  cachedLatestVersion = "";
+  cachedDownloadUrl = "";
+  ui_refresh_update_badge();
+}
 
 void ota_auto_check_request_now() { forceAutoCheck = true; }
 

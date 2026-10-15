@@ -21,6 +21,14 @@ BOOT_APP0=$(find "$HOME"/.platformio/packages/framework-arduinoespressif32-src-*
 DOCS_OUT="../docs/firmware"
 VERSION=$(grep -E 'FIRMWARE_VERSION\s*=' include/config.h | sed -E 's/.*"([^"]+)".*/\1/')
 
+# The web flasher and Pages manifests carry stable releases only. Betas go out
+# as GitHub pre-releases via webflasher/build_beta.sh.
+if [[ "$VERSION" == *-* ]]; then
+  echo "FIRMWARE_VERSION $VERSION is a pre-release. Use webflasher/build_beta.sh;" >&2
+  echo "the web flasher only publishes stable versions." >&2
+  exit 1
+fi
+
 if [[ -f include/secrets.h ]]; then
   echo "WARNING: include/secrets.h is present. The factory image embeds compile-time" >&2
   echo "defaults from that file. For a public GitHub flasher, move it aside first:" >&2
