@@ -236,10 +236,13 @@ void beginWifiJoin() {
 void startWifi() {
   WiFi.persistent(false);
   WiFi.mode(WIFI_STA);
-  WiFi.setSleep(WIFI_PS_MIN_MODEM);
+  // No modem sleep: with it the radio dozes between beacons and replies lag
+  // by hundreds of ms, which made FilaMan polls and GitHub downloads time out.
+  // Panels are mains-powered, so the extra radio current doesn't matter.
+  WiFi.setSleep(WIFI_PS_NONE);
   WiFi.setHostname(config().otaHostname.c_str());
   WiFi.onEvent(onWifiEvent);
-  esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
+  esp_wifi_set_ps(WIFI_PS_NONE);
   if (!config().wifiConfigured()) {
     setStatus("Set up WiFi on screen");
     wifi_setup_open();
