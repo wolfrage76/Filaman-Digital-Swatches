@@ -583,6 +583,10 @@ void handleRoot() {
   h += toggleField("Automatically Check for Firmware Updates",
                    "Check GitHub Releases hourly and show an update badge on the display menu",
                    "autoOta", c.autoCheckUpdates);
+  h += toggleField("Include Beta Releases",
+                   "Also offer GitHub pre-releases. Betas are for testing and may have bugs; "
+                   "the web flasher only ever installs stable releases",
+                   "beta", c.betaUpdates);
   h += "</div></div>";
 
   // Section 4: MQTT Broker & Security
@@ -617,13 +621,17 @@ void handleRoot() {
   h += footerLinks();
   h += "<script>const REPO='" PROJECT_GITHUB_REPO "',INST='";
   h += FIRMWARE_VERSION;
-  h += "';";
+  h += "',BETA=";
+  h += c.betaUpdates ? "true" : "false";
+  h += ";";
   h += R"JS(
 const $=id=>document.getElementById(id);
 function day(s){return s?new Date(s).toLocaleDateString():'-';}
-function cmp(a,b){a=a.replace(/^v/,'').split(/[.-]/);b=b.replace(/^v/,'').split(/[.-]/);
-for(let i=0;i<Math.max(a.length,b.length);i++){const x=parseInt(a[i]||0),y=parseInt(b[i]||0);
-if(x!==y)return x-y;}return 0;}
+function cmp(a,b){const p=v=>{v=v.replace(/^v/,'');const i=v.indexOf('-');
+return[v.slice(0,i<0?v.length:i).split('.').map(Number),i<0?'':v.slice(i+1)];};
+const[x,xs]=p(a),[y,ys]=p(b);for(let i=0;i<3;i++){const d=(x[i]||0)-(y[i]||0);if(d)return d;}
+if(xs===ys)return 0;if(!xs)return 1;if(!ys)return -1;
+return xs.localeCompare(ys,undefined,{numeric:true});}
 function gh(path){return fetch('https://api.github.com/repos/'+REPO+path,
 {headers:{Accept:'application/vnd.github+json'}}).then(r=>r.ok?r.json():Promise.reject(r.status));}
 function notes(btn,pre,shown,text){const b=$(btn),p=$(pre);b.disabled=!text;
@@ -634,7 +642,9 @@ e.textContent=t?new Date(t*1000).toLocaleString():'Waiting for network time';})(
 gh('/releases/tags/v'+INST).then(d=>{$('fwch').textContent=d.prerelease?'Pre-release':'Release';
 $('fwrel').textContent=day(d.published_at);notes('fwnb','fwn','Release notes',d.body||'');})
 .catch(s=>{$('fwch').textContent=s===404?'Local build':'Unknown';$('fwrel').textContent='-';});
-gh('/releases/latest').then(d=>{const l=$('ghlat');l.textContent=d.tag_name;
+(BETA?gh('/releases?per_page=5').then(l=>l.filter(r=>!r.draft)
+.reduce((a,r)=>!a||cmp(r.tag_name,a.tag_name)>0?r:a,null)||Promise.reject(404))
+:gh('/releases/latest')).then(d=>{const l=$('ghlat');l.textContent=d.tag_name;
 const newer=cmp(d.tag_name,INST)>0;l.classList.toggle('new',newer);
 $('ghrel').textContent=day(d.published_at);
 if(newer)notes('ghnb','ghn',"What's new",d.body||'');})
@@ -693,6 +703,7 @@ void handleSave() {
   if (server.hasArg("spCrit") && server.arg("spCrit").length())
     c.spoolCritPct = server.arg("spCrit").toInt();
   c.autoCheckUpdates = server.hasArg("autoOta");
+  c.betaUpdates = server.hasArg("beta");
   c.otaPassword = keepIfBlank("otaPass", c.otaPassword);
   c.save();
 

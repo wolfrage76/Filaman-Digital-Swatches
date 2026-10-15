@@ -33,6 +33,7 @@ struct AppConfig {
   int idleReturnSec = 60;           // 0 (off), 60, 180
   String displayTimezone;
   bool autoCheckUpdates = false;    // periodically poll GitHub for newer firmware
+  bool betaUpdates = false;         // also offer GitHub pre-releases (beta channel)
 
   void load();               // read all fields from NVS (macro = default)
   void save() const;         // persist all fields to NVS
@@ -46,6 +47,7 @@ struct AppConfig {
   void setSpoolThresholds(int lowPct, int critPct);
   void setIdleReturnSec(int sec);
   void setAutoCheckUpdates(bool enabled);
+  void setBetaUpdates(bool enabled);
 };
 
 // Process-wide config singleton (house style, like `displayMqtt`).
