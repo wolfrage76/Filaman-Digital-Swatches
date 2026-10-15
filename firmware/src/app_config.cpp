@@ -112,6 +112,7 @@ void AppConfig::load() {
   if (!otaHostname.length()) {
     otaHostname = defaultHostname();
   }
+  mdnsEnabled = p.getBool("mdns", true);
   otaPassword = p.getString("otaPass", OTA_PASSWORD);
   displayDimMin = p.getInt("dimMin", 5);
   displayOffMin = p.getInt("offMin", 15);
@@ -165,6 +166,7 @@ void AppConfig::save() const {
   p.putInt("fmPrinter", filamanPrinterId);
   p.putBool("fmTls", filamanTlsInsecure);
   p.putString("otaHost", otaHostname);
+  p.putBool("mdns", mdnsEnabled);
   p.putString("otaPass", otaPassword);
   p.putInt("dimMin", displayDimMin);
   p.putInt("offMin", displayOffMin);

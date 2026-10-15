@@ -48,6 +48,11 @@
 #define FILAMAN_TLS_INSECURE 1
 #endif
 
+// Public project pages, shown in the web console footer.
+#define PROJECT_GITHUB_REPO "wolfrage76/Filaman-Digital-Swatches"
+#define PROJECT_GITHUB_URL "https://github.com/" PROJECT_GITHUB_REPO
+#define PROJECT_MAKERWORLD_URL "https://makerworld.com/en/@Wofl"
+
 constexpr const char *FIRMWARE_VERSION = "0.21.4";
 constexpr int MQTT_SCHEMA_VERSION = 2;
 

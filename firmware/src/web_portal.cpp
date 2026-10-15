@@ -190,6 +190,38 @@ String toggleField(const char *title, const char *subtitle, const char *name, bo
   return h;
 }
 
+// GitHub and MakerWorld buttons that close every console page. Marks are
+// inline SVG: the panel often sits on a LAN with no route out, so nothing here
+// is fetched. currentColor lets each mark follow its button's text colour.
+#define FOOT_SVG "<svg viewBox='0 0 24 24' aria-hidden='true' focusable='false'><path d='"
+#define FOOT_SVG_END "'/></svg>"
+
+String footerLinks() {
+  return F(
+      "<style>.links{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;"
+      "margin-top:18px}"
+      ".links a{display:flex;align-items:center;justify-content:center;gap:8px;"
+      "padding:11px 8px;border-radius:9px;text-decoration:none;font-size:13px;font-weight:600;"
+      "background:#111823;color:#c7d2e0;border:1px solid #222f42;transition:background .14s}"
+      ".links a:hover{background:#18222f}"
+      ".links svg{width:15px;height:15px;flex:none;fill:currentColor}</style>"
+      "<footer class='links'>"
+      "<a href='" PROJECT_GITHUB_URL "' target='_blank' rel='noopener'>" FOOT_SVG
+      "M12 .5C5.37.5 0 5.87 0 12.5c0 5.3 3.44 9.8 8.21 11.39.6.11.82-.26.82-.58"
+      "v-2.03c-3.34.73-4.04-1.61-4.04-1.61-.55-1.39-1.34-1.76-1.34-1.76-1.09-.75."
+      "08-.73.08-.73 1.2.08 1.84 1.24 1.84 1.24 1.07 1.84 2.81 1.31 3.5 1 .11-.78."
+      "42-1.31.76-1.61-2.67-.3-5.47-1.34-5.47-5.96 0-1.32.47-2.39 1.24-3.23-.12-."
+      "31-.54-1.53.12-3.18 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 016.01 0c2.29-1.55 "
+      "3.3-1.23 3.3-1.23.66 1.65.24 2.87.12 3.18.77.84 1.24 1.91 1.24 3.23 0 4.63"
+      "-2.81 5.65-5.49 5.95.43.37.82 1.1.82 2.22v3.29c0 .32.22.7.83.58A12.01 12.01"
+      " 0 0024 12.5C24 5.87 18.63.5 12 .5z" FOOT_SVG_END "GitHub</a>"
+      "<a href='" PROJECT_MAKERWORLD_URL "' target='_blank' rel='noopener'>" FOOT_SVG
+      "M12 2.5l8.5 4.75v9.5L12 21.5l-8.5-4.75v-9.5L12 2.5zm0 2.29L6.06 8.1 12 11.4"
+      "l5.94-3.3L12 4.79zM5.5 9.79v5.79l5.5 3.07v-5.79L5.5 9.79zm13 0l-5.5 3.07v5."
+      "79l5.5-3.07V9.79z" FOOT_SVG_END "MakerWorld</a>"
+      "</footer>");
+}
+
 void sendStatusPage(int httpCode, const char *badge, const String &title, const String &message,
                     int refreshSec, bool isError) {
   String h =
@@ -252,7 +284,7 @@ void handleRoot() {
   const String latestVer = ota_cached_latest_version();
 
   String h;
-  h.reserve(14500);
+  h.reserve(20000);
   h += "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
        "<title>Digital Swatch System · Console</title><style>"
@@ -374,6 +406,22 @@ void handleRoot() {
        ".ota-meta{display:flex;align-items:center;justify-content:space-between;padding:10px 13px;"
        "background:#0b1017;border:1px solid var(--border-soft);border-radius:9px;margin-bottom:10px}"
        ".ota-ver{font-family:var(--mono);font-size:13px;font-weight:600;color:var(--text)}"
+       ".fw-rows{margin-bottom:12px}"
+       ".fw-row{display:flex;align-items:center;justify-content:space-between;gap:12px;"
+       "padding:9px 2px;border-bottom:1px solid var(--border-soft);font-size:13px}"
+       ".fw-row:last-child{border-bottom:0}"
+       ".fw-row .k{color:var(--muted)}"
+       ".fw-row .v{color:var(--text);text-align:right;font-variant-numeric:tabular-nums}"
+       ".fw-row .v.mono{font-family:var(--mono);font-weight:600}"
+       ".fw-row .v.new{color:var(--accent)}"
+       ".fw-notes-btns{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}"
+       ".btn-quiet{background:transparent;color:var(--muted);border-color:var(--border);"
+       "padding:7px 13px;font-size:12px}"
+       ".btn-quiet:hover:not(:disabled){color:var(--text);border-color:#354a66}"
+       ".btn-quiet:disabled{opacity:.45;cursor:default}"
+       ".notes{display:none;max-height:300px;overflow:auto;margin:0 0 12px;padding:12px 14px;"
+       "background:#0b1017;border:1px solid var(--border-soft);border-radius:9px;color:#b9c8d9;"
+       "font:12px/1.55 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere}"
        /* Bottom Save Bar */
        ".save-bar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;"
        "gap:14px;padding:16px 22px;margin-top:4px;background:rgba(17,24,35,.92);"
@@ -473,18 +521,28 @@ void handleRoot() {
   } else {
     h += "<span class='card-badge'>OTA Ready</span>";
   }
-  h += "</div>"
-       "<div class='ota-meta'><span style='color:var(--muted);font-size:12px'>Installed Firmware</span>"
-       "<span class='ota-ver'>v";
+  // Channel, dates and notes come from the GitHub API through the browser
+  // (script below). The install time is the device's own record.
+  h += "</div><div class='fw-rows'>"
+       "<div class='fw-row'><span class='k'>Installed</span><span class='v mono'>v";
   h += esc(String(FIRMWARE_VERSION));
-  h += "</span></div>";
-  if (updateAvail && latestVer.length()) {
-    h += "<div class='ota-meta' style='border-color:rgba(61,220,151,.35);background:rgba(61,220,151,.07)'>"
-         "<span style='color:var(--accent);font-size:12px;font-weight:600'>Available on GitHub</span>"
-         "<span class='ota-ver' style='color:var(--accent)'>v";
-    h += esc(latestVer);
-    h += "</span></div>";
-  }
+  h += "</span></div>"
+       "<div class='fw-row'><span class='k'>Channel</span><span class='v' id='fwch'>&hellip;</span></div>"
+       "<div class='fw-row'><span class='k'>Released</span><span class='v' id='fwrel'>&hellip;</span></div>"
+       "<div class='fw-row'><span class='k'>Installed on</span><span class='v' id='fwsince' data-t='";
+  h += String(ota_installed_at());
+  h += "'>&hellip;</span></div>"
+       "<div class='fw-row'><span class='k'>Latest on GitHub</span><span class='v mono";
+  if (updateAvail) h += " new";
+  h += "' id='ghlat'>";
+  h += latestVer.length() ? "v" + esc(latestVer) : String("&hellip;");
+  h += "</span></div>"
+       "<div class='fw-row'><span class='k'>Latest released</span><span class='v' id='ghrel'>&hellip;</span></div>"
+       "</div><div class='fw-notes-btns'>"
+       "<button type='button' class='btn btn-quiet' id='fwnb' disabled>Release notes</button>"
+       "<button type='button' class='btn btn-quiet' id='ghnb' disabled>What's new</button></div>"
+       "<pre class='notes' id='fwn'></pre><pre class='notes' id='ghn'></pre>"
+       "<p class='field-hint' style='margin:0 0 10px'>Release details are read from GitHub by this browser.</p>";
   h += "</div><div class='ota-actions'>"
        "<button class='btn btn-primary btn-block' type='submit'>"
        "Check &amp; Install Latest Release from GitHub</button>"
@@ -525,8 +583,22 @@ void handleRoot() {
   h += "</span></div>";
   h += field("Wi-Fi SSID (2.4 GHz)", "wifiSsid", c.wifiSsid, "text");
   h += pwField("Wi-Fi Password", "wifiPass");
-  h += field("Device Hostname", "otaHost", c.otaHostname, "text",
-             "The panel's .local name and wireless update target. Clear it to restore the default.");
+  {
+    String hint = "The name your router shows, and the wireless update target. "
+                  "Clear it to restore the default.";
+    if (WiFi.status() == WL_CONNECTED) {
+      hint += "<br>Reachable at: ";
+      if (c.mdnsEnabled) {
+        hint += "http://" + esc(c.otaHostname) + ".local/ &middot; ";
+      }
+      hint += "http://" + WiFi.localIP().toString() + "/";
+    }
+    h += field("Device Hostname", "otaHost", c.otaHostname, "text", hint.c_str());
+  }
+  h += toggleField("Answer to .local on the local network (mDNS)",
+                   "Finds the panel by name with no DNS server involved. Turn off if your "
+                   "network should carry no .local traffic; wireless updates then use the IP.",
+                   "mdns", c.mdnsEnabled);
   h += timezoneField(c.displayTimezone);
   h += "</div></div>";
 
@@ -583,9 +655,35 @@ void handleRoot() {
        "</div><button class='btn btn-primary' type='submit' style='min-width:210px'>"
        "Save Configuration &amp; Reboot</button></div></form>";
 
+  h += footerLinks();
   h += "<script>function toggleCustomTimezone(){const s=document.getElementById('f_tzPreset');"
        "const w=document.getElementById('tzCustomWrap');if(s&&w)w.style.display="
-       "s.value==='custom'?'block':'none';}</script></div></body></html>";
+       "s.value==='custom'?'block':'none';}";
+  h += "const REPO='" PROJECT_GITHUB_REPO "',INST='";
+  h += FIRMWARE_VERSION;
+  h += "';";
+  h += R"JS(
+const $=id=>document.getElementById(id);
+function day(s){return s?new Date(s).toLocaleDateString():'-';}
+function cmp(a,b){a=a.replace(/^v/,'').split(/[.-]/);b=b.replace(/^v/,'').split(/[.-]/);
+for(let i=0;i<Math.max(a.length,b.length);i++){const x=parseInt(a[i]||0),y=parseInt(b[i]||0);
+if(x!==y)return x-y;}return 0;}
+function gh(path){return fetch('https://api.github.com/repos/'+REPO+path,
+{headers:{Accept:'application/vnd.github+json'}}).then(r=>r.ok?r.json():Promise.reject(r.status));}
+function notes(btn,pre,shown,text){const b=$(btn),p=$(pre);b.disabled=!text;
+b.onclick=()=>{const open=p.style.display==='block';p.textContent=text;
+p.style.display=open?'none':'block';b.textContent=open?shown:'Hide';};}
+(function(){const e=$('fwsince'),t=parseInt(e.dataset.t||'0');
+e.textContent=t?new Date(t*1000).toLocaleString():'Waiting for network time';})();
+gh('/releases/tags/v'+INST).then(d=>{$('fwch').textContent=d.prerelease?'Pre-release':'Release';
+$('fwrel').textContent=day(d.published_at);notes('fwnb','fwn','Release notes',d.body||'');})
+.catch(s=>{$('fwch').textContent=s===404?'Local build':'Unknown';$('fwrel').textContent='-';});
+gh('/releases/latest').then(d=>{const l=$('ghlat');l.textContent=d.tag_name;
+const newer=cmp(d.tag_name,INST)>0;l.classList.toggle('new',newer);
+$('ghrel').textContent=day(d.published_at);
+if(newer)notes('ghnb','ghn',"What's new",d.body||'');})
+.catch(()=>{$('ghrel').textContent='-';});
+</script></div></body></html>)JS";
   server.send(200, "text/html", h);
 }
 
@@ -616,6 +714,7 @@ void handleSave() {
   if (server.hasArg("fmPrinter")) c.filamanPrinterId = server.arg("fmPrinter").toInt();
   c.filamanTlsInsecure = server.hasArg("fmTls");  // unchecked box sends nothing
   if (server.hasArg("otaHost")) c.otaHostname = server.arg("otaHost");
+  c.mdnsEnabled = server.hasArg("mdns");
   if (server.hasArg("tzPreset")) {
     const String preset = server.arg("tzPreset");
     if (preset == "custom") {
@@ -811,7 +910,9 @@ void handleDiagnostics() {
        "pause.onclick=()=>{paused=!paused;pause.textContent=paused?'Resume':'Pause';};"
        "document.getElementById('clear').onclick=async()=>{await fetch('/diagnostics/logs',{method:'DELETE'});"
        "paused=false;pause.textContent='Pause';load();};load();setInterval(load,2500);"
-       "</script></main></body></html>";
+       "</script>";
+  h += footerLinks();
+  h += "</main></body></html>";
   server.send(200, "text/html", h);
 }
 

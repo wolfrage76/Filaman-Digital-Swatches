@@ -5,7 +5,10 @@
 #include <HTTPClient.h>
 #include <Update.h>
 #include <WiFi.h>
+#include <ESPmDNS.h>
+#include <Preferences.h>
 #include <WiFiClientSecure.h>
+#include <time.h>
 #include <esp_ota_ops.h>
 #include <esp_system.h>
 
@@ -37,7 +40,7 @@ constexpr unsigned long kAutoCheckFirstDelayMs = 90UL * 1000UL;
 constexpr unsigned long kAutoCheckIntervalMs = 60UL * 60UL * 1000UL;
 
 constexpr const char *kReleasesApiUrl =
-    "https://api.github.com/repos/wolfrage76/Filaman-Digital-Swatches/releases/latest";
+    "https://api.github.com/repos/" PROJECT_GITHUB_REPO "/releases/latest";
 constexpr const char *kPagesBase =
     "https://wolfrage76.github.io/Filaman-Digital-Swatches/";
 // Shared version stamp (always published). Board-specific manifests may lag.
@@ -412,6 +415,8 @@ void ota_begin() {
   }
 
   ArduinoOTA.setHostname(config().otaHostname.c_str());
+  // ArduinoOTA owns the mDNS responder: off means no <hostname>.local at all.
+  ArduinoOTA.setMdnsEnabled(config().mdnsEnabled);
   if (config().otaPassword.length() > 0) {
     ArduinoOTA.setPassword(config().otaPassword.c_str());
   }
@@ -447,6 +452,9 @@ void ota_begin() {
   });
 
   ArduinoOTA.begin();
+  if (config().mdnsEnabled) {
+    MDNS.addService("http", "tcp", 80);
+  }
   begun = true;
   device_logf("OTA ready as %s @ %s", config().otaHostname.c_str(),
               WiFi.localIP().toString().c_str());
@@ -458,6 +466,37 @@ void ota_loop() {
   }
   ArduinoOTA.handle();
 }
+
+// The first time a firmware version sees a real clock, that moment is recorded
+// as its install time. A reflash of the same version keeps the first stamp.
+static uint32_t installedAt = 0;
+static bool installStamped = false;
+
+void ota_install_stamp_loop() {
+  if (installStamped) {
+    return;
+  }
+  const time_t now = time(nullptr);
+  struct tm t;
+  gmtime_r(&now, &t);
+  if (t.tm_year + 1900 < 2024) {  // NTP not in yet
+    return;
+  }
+  installStamped = true;
+  Preferences p;
+  p.begin("fwinfo", /*readOnly=*/false);
+  if (p.getString("ver", "") == FIRMWARE_VERSION) {
+    installedAt = p.getUInt("since", 0);
+  } else {
+    installedAt = static_cast<uint32_t>(now);
+    p.putString("ver", FIRMWARE_VERSION);
+    p.putUInt("since", installedAt);
+    device_logf("Firmware v%s recorded as installed", FIRMWARE_VERSION);
+  }
+  p.end();
+}
+
+uint32_t ota_installed_at() { return installedAt; }
 
 bool ota_is_active() {
   return active;

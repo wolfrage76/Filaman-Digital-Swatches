@@ -22,6 +22,7 @@ struct AppConfig {
   int filamanPrinterId = FILAMAN_PRINTER_ID;
   bool filamanTlsInsecure = FILAMAN_TLS_INSECURE;
   String otaHostname;
+  bool mdnsEnabled = true;  // answer to <hostname>.local (mDNS)
   String otaPassword;
   int displayDimMin = 5;
   int displayOffMin = 15;
