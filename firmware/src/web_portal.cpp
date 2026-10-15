@@ -526,7 +526,7 @@ void handleRoot() {
   h += field("Wi-Fi SSID (2.4 GHz)", "wifiSsid", c.wifiSsid, "text");
   h += pwField("Wi-Fi Password", "wifiPass");
   h += field("Device Hostname", "otaHost", c.otaHostname, "text",
-             "Used for ArduinoOTA identification on the local network");
+             "The panel's .local name and wireless update target. Clear it to restore the default.");
   h += timezoneField(c.displayTimezone);
   h += "</div></div>";
 

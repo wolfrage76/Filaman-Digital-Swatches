@@ -1,11 +1,27 @@
 #include "app_config.h"
 
 #include <Preferences.h>
+#include <esp_mac.h>
 
 #include "boards/board.h"
 
 namespace {
 AppConfig g_config;
+
+// Board name plus the last two MAC bytes (e.g. "crowpanel-3f2a"), so several
+// panels on one LAN don't all claim the same mDNS name. Readable before WiFi starts.
+String defaultHostname() {
+#ifdef OTA_HOSTNAME
+  return OTA_HOSTNAME;
+#else
+  uint8_t mac[6] = {};
+  esp_read_mac(mac, ESP_MAC_WIFI_STA);
+  char suffix[6];
+  snprintf(suffix, sizeof(suffix), "%02x%02x", mac[4], mac[5]);
+  return String(BOARD_DEFAULT_HOSTNAME) + "-" + suffix;
+#endif
+}
+
 constexpr const char *kNs = "cfg";          // NVS namespace
 constexpr const char *kSsidSentinel = "replace-with-wifi-ssid";  // config.h default
 constexpr int kTimeoutChoices[] = {5, 10, 15, 30};
@@ -92,11 +108,10 @@ void AppConfig::load() {
   filamanApiKey = p.getString("fmKey", FILAMAN_API_KEY);
   filamanPrinterId = p.getInt("fmPrinter", FILAMAN_PRINTER_ID);
   filamanTlsInsecure = p.getBool("fmTls", FILAMAN_TLS_INSECURE);
-#if __has_include("secrets.h")
-  otaHostname = p.getString("otaHost", OTA_HOSTNAME);
-#else
-  otaHostname = p.getString("otaHost", BOARD_DEFAULT_HOSTNAME);
-#endif
+  otaHostname = p.getString("otaHost", "");
+  if (!otaHostname.length()) {
+    otaHostname = defaultHostname();
+  }
   otaPassword = p.getString("otaPass", OTA_PASSWORD);
   displayDimMin = p.getInt("dimMin", 5);
   displayOffMin = p.getInt("offMin", 15);

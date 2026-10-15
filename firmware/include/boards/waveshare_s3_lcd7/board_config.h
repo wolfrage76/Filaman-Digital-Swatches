@@ -8,7 +8,7 @@
 #define BOARD_ID                "waveshare-s3-lcd7"
 #define BOARD_MODEL             "Waveshare ESP32-S3-Touch-LCD-7"
 #define BOARD_OTA_ASSET         "firmware-waveshare-s3-lcd7.bin"
-#define BOARD_DEFAULT_HOSTNAME  "waveshare-ams"
+#define BOARD_DEFAULT_HOSTNAME  "waveshare"
 #define BOARD_BACKLIGHT_PWM     0
 
 void boardEarlyInit();
