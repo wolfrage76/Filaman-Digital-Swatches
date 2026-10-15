@@ -42,8 +42,8 @@ Open the flasher and stay inside your board’s card.
 
 ## Connect Wi‑Fi and FilaMan
 
-1. On first boot, pick the network on the touchscreen and enter the password. Wi‑Fi is also under the `≡` menu later.
-2. Open the hostname above, or the IP shown in the Wi‑Fi menu. If `.local` does not resolve, use the IP.
+1. On first boot the panel lists nearby networks. Pick yours and enter the password. Wi‑Fi is also under the `≡` menu later.
+2. Once Wi‑Fi connects, the panel shows its web address and a QR code. Scan the code with your phone, or open the address in a browser on the same network. **Enter on this display** sets FilaMan from the touchscreen instead.
 3. On the config page set:
    - **FilaMan Base URL**, for example `http://192.168.1.50:8083`
    - **FilaMan API Key** (`uak....`)
@@ -53,7 +53,7 @@ Open the flasher and stay inside your board’s card.
 
 The header Wi‑Fi icon turns green when FilaMan is linked, amber while it is still connecting, and a red `×` when Wi‑Fi itself failed.
 
-Two panels on one network need different **Hostname** values. The defaults collide if you leave both boards named as they shipped from a shared `secrets.h`.
+Two panels of the same board on one network need different **Hostname** values. Both ship with the same default.
 
 ## What you see
 
@@ -103,28 +103,28 @@ The panel polls FilaMan Display API schema v3 every 10 seconds (20 seconds after
 
 ```bash
 cd firmware
-cp include/secrets.h.example include/secrets.h
-# Wi-Fi, FilaMan URL, API key, OTA password
 ../.venv/bin/pio run -e crowpanel_7_idf -t upload
 ../.venv/bin/pio run -e waveshare-s3-lcd7 -t upload
 ```
 
-`OTA_HOSTNAME` in `secrets.h` overrides the board default on every image you compile. Public flasher images are built without that file, so they keep `crowpanel` and `waveshare-ams`. A local Waveshare build that still says `crowpanel` will advertise `crowpanel.local`.
+A local build behaves like the public images: set Wi‑Fi and FilaMan on the panel, and they stay in its settings storage across updates.
 
-`./ota.sh` builds and sends the **CrowPanel** image only. For Waveshare:
+`include/secrets.h` is optional. Copy `include/secrets.h.example` only if you want compile-time defaults (Wi‑Fi, FilaMan URL, API key, OTA password, hostname) for panels you flash yourself. The first boot of such a build saves those values to the panel. `OTA_HOSTNAME` there overrides the board default (`crowpanel`, `waveshare-ams`) on every image you compile.
+
+`./ota.sh` builds and sends the **CrowPanel** image only. It uses `OTA_PASSWORD` from the environment, or from `secrets.h` if present, or no password. For Waveshare:
 
 ```bash
 OTA_PASSWORD=yourpass ../.venv/bin/pio run -e waveshare-s3-lcd7_ota -t upload \
   --upload-port waveshare-ams.local
 ```
 
-Rebuild the pages images with `secrets.h` moved aside. The script writes both boards into `docs/firmware/` and copies the CrowPanel app to `firmware.bin`.
+Leave `OTA_PASSWORD` unset when the panel has no password.
+
+Rebuild the pages images with the script below. It writes both boards into `docs/firmware/` and copies the CrowPanel app to `firmware.bin`. It refuses to run while `include/secrets.h` exists, so move that file aside first if you keep one.
 
 ```bash
 cd firmware
-mv include/secrets.h include/secrets.h.local
 ./webflasher/build_factory.sh
-mv include/secrets.h.local include/secrets.h
 ```
 
 More detail, including how to add a board: [firmware/FLASHING.md](firmware/FLASHING.md).
