@@ -15,6 +15,7 @@
 #include "display_poll.h"
 #include "ota_update.h"
 #include "printer_list.h"
+#include "timezones.h"
 
 namespace {
 
@@ -101,69 +102,27 @@ String pwField(const char *label, const char *name, const char *hint = nullptr) 
 }
 
 String timezoneField(const String &current) {
-  struct TimezoneOption {
-    const char *value;
-    const char *label;
-  };
-  static const TimezoneOption options[] = {
-      {"UTC0", "UTC - Coordinated Universal Time"},
-      {"HST10", "United States - Hawaii"},
-      {"AKST9AKDT,M3.2.0,M11.1.0", "United States - Alaska"},
-      {"PST8PDT,M3.2.0,M11.1.0", "United States / Canada - Pacific"},
-      {"MST7", "United States - Arizona (no daylight saving)"},
-      {"MST7MDT,M3.2.0,M11.1.0", "United States / Canada - Mountain"},
-      {"CST6CDT,M3.2.0,M11.1.0", "United States / Canada - Central"},
-      {"EST5EDT,M3.2.0,M11.1.0", "United States / Canada - Eastern"},
-      {"AST4ADT,M3.2.0,M11.1.0", "Canada - Atlantic"},
-      {"NST3:30NDT,M3.2.0,M11.1.0", "Canada - Newfoundland"},
-      {"GMT0BST,M3.5.0/1,M10.5.0", "United Kingdom / Ireland"},
-      {"WET0WEST,M3.5.0/1,M10.5.0", "Western Europe"},
-      {"CET-1CEST,M3.5.0,M10.5.0/3", "Central Europe"},
-      {"EET-2EEST,M3.5.0/3,M10.5.0/4", "Eastern Europe"},
-      {"JST-9", "Japan"},
-      {"AEST-10AEDT,M10.1.0,M4.1.0/3", "Australia - Sydney / Melbourne"},
-      {"ACST-9:30ACDT,M10.1.0,M4.1.0/3", "Australia - Adelaide"},
-      {"AWST-8", "Australia - Perth"},
-      {"NZST-12NZDT,M9.5.0,M4.1.0/3", "New Zealand"},
-  };
-
-  bool known = false;
-  for (const auto &option : options) {
-    if (current == option.value) {
-      known = true;
-      break;
-    }
-  }
-
+  const int sel = timezone_index(current);
   String h =
-      "<div class='field'><label class='field-label' for='f_tzPreset'>Local time zone</label>"
-      "<select id='f_tzPreset' name='tzPreset' onchange='toggleCustomTimezone()'>";
-  for (const auto &option : options) {
+      "<div class='field'><label class='field-label' for='f_tzPreset'>Time zone</label>"
+      "<select id='f_tzPreset' name='tzPreset'>";
+  if (sel < 0) {
+    // A rule from secrets.h or an older firmware: keep it until a place is picked.
+    h += "<option value='' selected>Keep current setting</option>";
+  }
+  for (int i = 0; i < kTimezoneCount; ++i) {
     h += "<option value='";
-    h += esc(String(option.value));
+    h += i;
     h += "'";
-    if (current == option.value) {
+    if (i == sel) {
       h += " selected";
     }
     h += ">";
-    h += option.label;
+    h += kTimezones[i].label;
     h += "</option>";
   }
-  h += "<option value='custom'";
-  if (!known) {
-    h += " selected";
-  }
-  h += ">Advanced - custom POSIX rule</option></select>"
-       "<span class='field-hint'>Daylight-saving changes are handled automatically where applicable.</span>"
-       "<div id='tzCustomWrap'";
-  if (known) {
-    h += " style='display:none'";
-  }
-  h += "><label class='field-label' for='f_tzCustom' style='margin-top:10px'>"
-       "Custom POSIX rule</label><input id='f_tzCustom' type='text' name='tzCustom' value='";
-  h += esc(current);
-  h += "' placeholder='EST5EDT,M3.2.0,M11.1.0'>"
-       "<span class='field-hint'>Only use this when your location is not listed above.</span></div></div>";
+  h += "</select><span class='field-hint'>Pick the place nearest you. "
+       "Daylight saving is handled automatically.</span></div>";
   return h;
 }
 
@@ -284,7 +243,7 @@ void handleRoot() {
   const String latestVer = ota_cached_latest_version();
 
   String h;
-  h.reserve(20000);
+  h.reserve(23000);
   h += "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
        "<title>Digital Swatch System · Console</title><style>"
@@ -656,10 +615,7 @@ void handleRoot() {
        "Save Configuration &amp; Reboot</button></div></form>";
 
   h += footerLinks();
-  h += "<script>function toggleCustomTimezone(){const s=document.getElementById('f_tzPreset');"
-       "const w=document.getElementById('tzCustomWrap');if(s&&w)w.style.display="
-       "s.value==='custom'?'block':'none';}";
-  h += "const REPO='" PROJECT_GITHUB_REPO "',INST='";
+  h += "<script>const REPO='" PROJECT_GITHUB_REPO "',INST='";
   h += FIRMWARE_VERSION;
   h += "';";
   h += R"JS(
@@ -716,13 +672,11 @@ void handleSave() {
   if (server.hasArg("otaHost")) c.otaHostname = server.arg("otaHost");
   c.mdnsEnabled = server.hasArg("mdns");
   if (server.hasArg("tzPreset")) {
+    // Index into kTimezones; empty means "Keep current setting".
     const String preset = server.arg("tzPreset");
-    if (preset == "custom") {
-      if (server.hasArg("tzCustom") && server.arg("tzCustom").length()) {
-        c.displayTimezone = server.arg("tzCustom");
-      }
-    } else if (preset.length()) {
-      c.displayTimezone = preset;
+    const int i = preset.toInt();
+    if (preset.length() && i >= 0 && i < kTimezoneCount) {
+      c.displayTimezone = kTimezones[i].posix;
     }
   } else if (server.hasArg("tz") && server.arg("tz").length()) {
     // Backward compatibility for older forms and scripted configuration.
