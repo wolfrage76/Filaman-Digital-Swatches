@@ -21,6 +21,7 @@ constexpr uint32_t COL_BORDER = 0x2A3544;
 constexpr uint32_t COL_TEXT = 0xF2F5F8;
 constexpr uint32_t COL_MUTED = 0x8B98A8;
 constexpr uint32_t COL_ACCENT = 0x3DDC97;
+constexpr uint32_t COL_WARN = 0xFFB443;
 
 lv_obj_t *overlay = nullptr;
 lv_obj_t *titleLabel = nullptr;
@@ -149,10 +150,21 @@ void showWifiInfo() {
 void showScanList() {
   pane = WifiPane::Scan;
   clearContent();
-  lv_label_set_text(titleLabel, "WiFi Setup");
+  lv_label_set_text(titleLabel,
+                    config().wifiConfigured() ? "WiFi Setup" : "Step 1 of 2: Connect WiFi");
   setStatus("Scanning...", COL_MUTED);
 
-  const int n = WiFi.scanNetworks();
+  // A pending join (or the core's auto-reconnect) blocks scanning; stop it
+  // first. maintainWifi() rejoins the saved network afterwards.
+  if (WiFi.status() != WL_CONNECTED) {
+    WiFi.disconnect(/*wifioff=*/false, /*eraseap=*/false);
+    delay(100);
+  }
+  int n = WiFi.scanNetworks();
+  if (n == WIFI_SCAN_FAILED) {
+    delay(500);
+    n = WiFi.scanNetworks();
+  }
   ssids.clear();
   std::vector<int> rssis;
   for (int i = 0; i < n; ++i) {
@@ -176,8 +188,12 @@ void showScanList() {
   WiFi.scanDelete();
 
   const String cur = config().wifiConfigured() ? config().wifiSsid : String("none");
-  setStatus(String(static_cast<int>(ssids.size())) + " networks   (current: " + cur + ")",
-            COL_MUTED);
+  if (n < 0) {
+    setStatus("Scan failed - tap Scan again", COL_WARN);
+  } else {
+    setStatus(String(static_cast<int>(ssids.size())) + " networks   (current: " + cur + ")",
+              COL_MUTED);
+  }
 
   lv_obj_t *col = makeColumn();
   makeRowButton(col, String(LV_SYMBOL_REFRESH) + "  Scan again", onScanAgain, nullptr);
@@ -293,7 +309,12 @@ void wifi_setup_open() {
   }
   lv_obj_clear_flag(overlay, LV_OBJ_FLAG_HIDDEN);
   lv_obj_move_foreground(overlay);
-  showWifiInfo();
+  // First run: skip the status pane and go straight to picking a network.
+  if (config().wifiConfigured()) {
+    showWifiInfo();
+  } else {
+    showScanList();
+  }
 }
 
 void wifi_setup_close() {

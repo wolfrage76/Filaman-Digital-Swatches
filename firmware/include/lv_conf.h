@@ -48,6 +48,7 @@ static inline void *lv_psram_realloc(void *p, size_t size) {
 #define LV_USE_CONT 1
 #define LV_USE_OBJ 1
 #define LV_USE_IMG 1
+#define LV_USE_QRCODE 1  // first-run FilaMan setup links to the web config page
 
 #define LV_FONT_MONTSERRAT_12 1
 #define LV_FONT_MONTSERRAT_14 1

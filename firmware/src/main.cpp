@@ -23,6 +23,7 @@
 #include "touch_input.h"
 #include "ui/menu_ui.h"
 #include "ui/printer_select.h"
+#include "ui/setup_guide.h"
 #include "ui/ui.h"
 #include "ui/wifi_setup.h"
 #include "web_portal.h"
@@ -252,7 +253,23 @@ void startWifi() {
   beginWifiJoin();
 }
 
+// First-run step 2: WiFi is up but FilaMan has no URL/key. Shown once per
+// boot, and not over a menu the user already has open.
+void showFilamanSetupIfNeeded(const String &ip) {
+  static bool shown = false;
+  if (shown || filaman.configured() || setup_guide_dismissed() || menu_is_open()) {
+    return;
+  }
+  shown = true;
+  setup_guide_open(ip);
+}
+
 void maintainWifi() {
+  // No real SSID yet: retrying the placeholder keeps the radio busy and
+  // makes the setup screen's scan fail.
+  if (!config().wifiConfigured()) {
+    return;
+  }
   const wl_status_t status = WiFi.status();
   const unsigned long now = millis();
 
@@ -265,6 +282,7 @@ void maintainWifi() {
       setStatus(String("WiFi ") + ip);
       ota_begin();
       web_portal_begin();
+      showFilamanSetupIfNeeded(ip);
     }
     return;
   }
@@ -418,6 +436,7 @@ void setup() {
   wifi_setup_begin();
   printer_select_begin();
   menu_begin();
+  setup_guide_begin();
   for (int i = 0; i < 40; ++i) {
     lv_timer_handler();
     delay(5);
