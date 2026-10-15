@@ -53,7 +53,7 @@
 #define PROJECT_GITHUB_URL "https://github.com/" PROJECT_GITHUB_REPO
 #define PROJECT_MAKERWORLD_URL "https://makerworld.com/en/@Wofl"
 
-constexpr const char *FIRMWARE_VERSION = "0.21.4";
+constexpr const char *FIRMWARE_VERSION = "0.22.0";
 constexpr int MQTT_SCHEMA_VERSION = 2;
 
 // OTA_HOSTNAME (secrets.h, optional) replaces the generated default hostname,
