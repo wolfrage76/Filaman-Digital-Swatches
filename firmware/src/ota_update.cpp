@@ -39,6 +39,9 @@ bool sawWifiConnected = false;
 // unauthenticated 60/hr GitHub limit even with a few panels on one IP.
 constexpr unsigned long kAutoCheckFirstDelayMs = 90UL * 1000UL;
 constexpr unsigned long kAutoCheckIntervalMs = 60UL * 60UL * 1000UL;
+// Connection attempts for GitHub downloads (only when the connect itself fails).
+constexpr int kConnectAttempts = 3;
+constexpr unsigned long kConnectRetryDelayMs = 1500;
 
 // releases/latest never returns a pre-release, so stable panels can't see betas.
 constexpr const char *kReleasesApiUrl =
@@ -183,13 +186,22 @@ bool fetchNewestPrerelease(String &versionOut, String &urlOut, String &errorOut)
   http.setReuse(false);
   http.useHTTP10(true);  // no chunked encoding, so the stream is plain JSON
   http.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
-  if (!http.begin(secure, kReleasesListUrl)) {
-    errorOut = "GitHub connection failed";
-    return false;
+  // A negative code means the connection never opened (DNS, TCP or TLS); on a
+  // laggy Wi-Fi link that is often transient, so try a few times.
+  int code = -1;
+  for (int attempt = 0; attempt < kConnectAttempts && code < 0; ++attempt) {
+    if (attempt > 0) {
+      http.end();
+      delay(kConnectRetryDelayMs);
+    }
+    if (!http.begin(secure, kReleasesListUrl)) {
+      errorOut = "GitHub connection failed";
+      return false;
+    }
+    http.addHeader("User-Agent", String("DigitalSwatchSystem/") + BOARD_ID);
+    http.addHeader("Accept", "application/vnd.github+json");
+    code = http.GET();
   }
-  http.addHeader("User-Agent", String("DigitalSwatchSystem/") + BOARD_ID);
-  http.addHeader("Accept", "application/vnd.github+json");
-  const int code = http.GET();
   if (code != 200) {
     drainHttp(http);
     http.end();
@@ -258,6 +270,42 @@ bool fetchNewestPrerelease(String &versionOut, String &urlOut, String &errorOut)
     }
   }
   return versionOut.length() > 0;
+}
+
+// GitHub release assets answer with a redirect to a signed URL on another
+// host. Following that inside one HTTPClient reuses the TLS client for the new
+// host, and the connect fails (-1). Read the Location here with its own
+// client and let the download open a fresh connection to it.
+String resolveGithubRedirect(const String &url) {
+  for (int attempt = 0; attempt < kConnectAttempts; ++attempt) {
+    if (attempt > 0) {
+      delay(kConnectRetryDelayMs);
+    }
+    WiFiClientSecure secure;
+    secure.setInsecure();
+    HTTPClient http;
+    http.setTimeout(10000);
+    http.setReuse(false);
+    http.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
+    if (!http.begin(secure, url)) {
+      continue;
+    }
+    http.addHeader("User-Agent", String("DigitalSwatchSystem-") + BOARD_ID);
+    const char *keys[] = {"Location"};
+    http.collectHeaders(keys, 1);
+    const int code = http.GET();
+    const String location = http.header("Location");
+    http.end();
+    if (code >= 300 && code < 400 && location.startsWith("https://")) {
+      return location;
+    }
+    if (code > 0) {
+      device_logf("Download: GitHub answered %d, no redirect", code);
+      return url;
+    }
+    device_logf("Download: GitHub connect failed (%d)", code);
+  }
+  return url;
 }
 
 void rememberCheckResult(const String &ver, const String &url) {
@@ -452,9 +500,12 @@ bool ota_install_github_update(const String &downloadUrl,
     return false;
   }
 
-  const String url = downloadUrl.length() ? downloadUrl : String(pagesFirmwareUrl());
+  String url = downloadUrl.length() ? downloadUrl : String(pagesFirmwareUrl());
   active = true;
   ui_set_connection_status("GitHub OTA...");
+  if (url.startsWith("https://github.com/")) {
+    url = resolveGithubRedirect(url);  // Pages URLs download directly, as before
+  }
 
   WiFiClientSecure secure;
   secure.setInsecure();
@@ -463,14 +514,21 @@ bool ota_install_github_update(const String &downloadUrl,
   http.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
   http.useHTTP10(true);
 
-  if (!http.begin(secure, url)) {
-    active = false;
-    errorOut = "HTTP begin failed";
-    return false;
+  int code = -1;
+  for (int attempt = 0; attempt < kConnectAttempts && code < 0; ++attempt) {
+    if (attempt > 0) {
+      http.end();
+      device_logf("Download: connect failed (%d), retrying", code);
+      delay(kConnectRetryDelayMs);
+    }
+    if (!http.begin(secure, url)) {
+      active = false;
+      errorOut = "HTTP begin failed";
+      return false;
+    }
+    http.addHeader("User-Agent", String("DigitalSwatchSystem-") + BOARD_ID);
+    code = http.GET();
   }
-  http.addHeader("User-Agent", String("DigitalSwatchSystem-") + BOARD_ID);
-
-  const int code = http.GET();
   if (code != 200) {
     http.end();
     active = false;
