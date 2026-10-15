@@ -1,6 +1,6 @@
 # Flashing Digital Swatch System
 
-Firmware **v0.21.1**. CrowPanel and Waveshare share the UI and use different images. Do not cross-flash. The running firmware rejects an image whose embedded board id does not match.
+Firmware **v0.21.2**. CrowPanel and Waveshare share the UI and use different images. Do not cross-flash. The running firmware rejects an image whose embedded board id does not match.
 
 | | CrowPanel 7″ | Waveshare ESP32-S3-Touch-LCD-7 |
 |---|---|---|

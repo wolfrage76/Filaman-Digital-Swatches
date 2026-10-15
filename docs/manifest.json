@@ -1,6 +1,6 @@
 {
   "name": "Digital Swatch System (CrowPanel)",
-  "version": "0.21.1",
+  "version": "0.21.2",
   "new_install_prompt_erase": true,
   "builds": [
     {
