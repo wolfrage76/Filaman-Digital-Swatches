@@ -1,10 +1,18 @@
 # Flashing Digital Swatch System
 
-Firmware **v0.21.4**. CrowPanel and Waveshare share the UI and use different images. Do not cross-flash. The running firmware rejects an image whose embedded board id does not match.
+How to flash, update, and publish firmware for both supported boards, and how to add a new one. For first-time setup, see the [main README](../README.md).
+
+The firmware version lives in `include/config.h` (`FIRMWARE_VERSION`). `build_factory.sh` copies it into every published manifest.
+
+> [!CAUTION]
+> CrowPanel and Waveshare share the UI but use different images. Do not cross-flash. The running firmware rejects an image whose embedded board id does not match.
+
+## Board matrix
 
 | | CrowPanel 7″ | Waveshare ESP32-S3-Touch-LCD-7 |
 |---|---|---|
 | PlatformIO env | `crowpanel_7_idf` | `waveshare-s3-lcd7` |
+| OTA env | `crowpanel_7_idf_ota` | `waveshare-s3-lcd7_ota` |
 | Flash | 4 MB | 16 MB |
 | USB | CH340. Install the driver if the browser shows no port. | Native USB. Hold **BOOT**, tap **RESET**, release **BOOT** if the port is missing. |
 | Default hostname | `crowpanel-xxxx.local` | `waveshare-xxxx.local` |
@@ -13,20 +21,29 @@ Firmware **v0.21.4**. CrowPanel and Waveshare share the UI and use different ima
 | App image | `firmware-crowpanel-s3-lcd7.bin` | `firmware-waveshare-s3-lcd7.bin` |
 | GitHub update download | `firmware.bin` (same bytes as the CrowPanel app) | `firmware-waveshare-s3-lcd7.bin` |
 
-`include/secrets.h` is optional. Copy it from `include/secrets.h.example` only if you want compile-time defaults for panels you flash yourself. The first boot of such a build saves them to the panel. `xxxx` is the last four hex digits of the panel's Wi‑Fi MAC address; **≡ → System** shows it. An `OTA_HOSTNAME` in `secrets.h` replaces that default on whichever board you compile.
+`xxxx` is the last four hex digits of the panel's Wi‑Fi MAC address. **≡ → System** shows it.
 
 ## Web flasher
 
-Chrome or Edge, USB data cable:
-
-https://wolfrage76.github.io/Filaman-Digital-Swatches/
+Needs Chrome or Edge and a USB data cable: <https://wolfrage76.github.io/Filaman-Digital-Swatches/>
 
 1. Open the card for the board you are holding.
-2. **Factory Reset & Install** for a first flash or a blank screen.
-3. **Keep Settings & Update** when Wi‑Fi and FilaMan are already saved. If asked to erase, choose **No**.
-4. After a factory reset, the panel walks you through Wi‑Fi and then FilaMan.
+2. Pick one:
+   - **Factory Reset & Install** for a first flash or a blank screen. The panel then walks you through Wi‑Fi and FilaMan.
+   - **Keep Settings & Update** when Wi‑Fi and FilaMan are already saved. If asked to erase, choose **No**.
 
-## USB from PlatformIO
+## Building locally
+
+All commands run from `firmware/` and expect PlatformIO and esptool in a virtualenv at the repo root:
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install platformio esptool
+```
+
+`include/secrets.h` is optional. Copy it from `include/secrets.h.example` only if you want compile-time defaults for panels you flash yourself. The first boot of such a build saves them to the panel. An `OTA_HOSTNAME` in `secrets.h` replaces the generated hostname on whichever board you compile, so leave it out if you flash more than one panel.
+
+### USB
 
 ```bash
 cd firmware
@@ -34,16 +51,17 @@ cd firmware
 ../.venv/bin/pio run -e waveshare-s3-lcd7 -t upload
 ```
 
-## Wireless update
+### Wireless (OTA)
 
-On the panel: **Menu → Firmware Update → Check for updates**. The version stamp is `manifest-update.json` on GitHub Pages. The Waveshare manifest is optional and is not required for that stamp.
-
-From the LAN, `POST` the matching `.bin` to `http://<panel-ip>/update`.
-
-`./ota.sh <hostname-or-IP>` builds and sends **CrowPanel** only. The password is the panel's **OTA / Config Password**. The script reads it from `OTA_PASSWORD` in the environment, or from `secrets.h` if present, and sends none otherwise. Leave `OTA_PASSWORD` unset below when the panel has no password. Both boards:
+The password is the panel's **OTA / Config Password**. Leave `OTA_PASSWORD` unset when the panel has no password.
 
 ```bash
 cd firmware
+# CrowPanel shortcut: builds, then sends. Reads OTA_PASSWORD from the
+# environment, else from secrets.h if present, else sends none.
+./ota.sh crowpanel-xxxx.local      # or an IP address
+
+# Either board through PlatformIO
 OTA_PASSWORD=yourpass ../.venv/bin/pio run -e crowpanel_7_idf_ota -t upload \
   --upload-port crowpanel-xxxx.local
 
@@ -51,22 +69,38 @@ OTA_PASSWORD=yourpass ../.venv/bin/pio run -e waveshare-s3-lcd7_ota -t upload \
   --upload-port waveshare-xxxx.local
 ```
 
-## Publish images for GitHub Pages
+> [!WARNING]
+> Flash display-driver changes over USB first. OTA is only safe for UI and logic changes.
 
-`build_factory.sh` refuses to run while `include/secrets.h` is present. If you keep one, move it aside for the build.
+## Updating an installed panel
+
+- **On the panel:** **Menu → Firmware Update → Check for updates**. The version it compares against comes from `manifest-update.json` on GitHub Pages. That stamp doesn't need the Waveshare manifest.
+- **From the LAN:** `POST` the matching `.bin` to `http://<panel-ip>/update`, or open that URL in a browser as user `admin` and upload it.
+- **Over USB:** **Keep Settings & Update** on the web flasher.
+
+## Publish images for GitHub Pages
 
 ```bash
 cd firmware
 ./webflasher/build_factory.sh
 ```
 
-Before you commit `docs/firmware/`:
+This builds both boards and writes their factory, app, bootloader and partition images to `docs/firmware/`. It copies the CrowPanel set to the unsuffixed names (`firmware.bin`, `factory.bin`, …) and stamps the version into all five manifests under `docs/`.
 
-- Both app images contain the version from `include/config.h`.
-- `firmware.bin` matches `firmware-crowpanel-s3-lcd7.bin`.
-- The five manifests under `docs/` show that same version.
-- The binaries do not contain your Wi‑Fi password or FilaMan API key.
-- `include/secrets.h`, if you keep one, is not staged.
+> [!IMPORTANT]
+> The script refuses to run while `include/secrets.h` exists, because the factory image would embed its defaults. Move the file aside for the build:
+>
+> ```bash
+> mv include/secrets.h include/secrets.h.local && ./webflasher/build_factory.sh; mv include/secrets.h.local include/secrets.h
+> ```
+
+Before you commit `docs/firmware/`, check that:
+
+- [ ] Both app images contain the version from `include/config.h`.
+- [ ] `firmware.bin` matches `firmware-crowpanel-s3-lcd7.bin`.
+- [ ] The five manifests under `docs/` show that same version.
+- [ ] The binaries do not contain your Wi‑Fi password or FilaMan API key.
+- [ ] `include/secrets.h`, if you keep one, is not staged.
 
 ## Add a board
 
@@ -74,14 +108,16 @@ Before you commit `docs/firmware/`:
 2. Fill `board_config.h` (`include/boards/board.h` lists the macros).
 3. Implement `panel.cpp` and `board.cpp` behind `include/hardware/panel.h`.
 4. Add `#elif defined(BOARD_…)` in `include/boards/board.h`.
-5. Add an `[env:…]` in `platformio.ini` with `-DBOARD_…`, `build_src_filter`, and `pre:select_board.py`. ESP-IDF builds ignore `src_filter` unless that script parks the other board folders.
-6. Add keep-settings and factory manifests, then document the env in the table above.
+5. Add an `[env:…]` and an `_ota` env in `platformio.ini` with `-DBOARD_…`, `build_src_filter`, and `pre:select_board.py`. ESP-IDF builds ignore `src_filter` unless that script parks the other board folders.
+6. Add a `merge_factory` call and the new manifests to `webflasher/build_factory.sh`.
+7. Add keep-settings and factory manifests under `docs/`, plus a card for them in `docs/index.html`.
+8. Add the board to the [board matrix](#board-matrix) and the main README.
 
-## Other CrowPanel environments
+## All PlatformIO environments
 
 | Env | Use |
 |---|---|
 | `crowpanel_7_idf` / `_idf_ota` | Current CrowPanel build |
 | `waveshare-s3-lcd7` / `_ota` | Current Waveshare build |
-| `crowpanel_7_hmi` / `_ota` | Older Arduino 2.x / IDF 4.4 stack |
-| `crowpanel_7_bounce` / `_bounce_ota` | Bounce buffers without the full XIP rebuild |
+| `crowpanel_7_hmi` / `_ota` | Older CrowPanel build on the Arduino 2.x / IDF 4.4 stack |
+| `crowpanel_7_bounce` / `_bounce_ota` | CrowPanel with bounce buffers, without the full XIP rebuild |
