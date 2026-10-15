@@ -4,220 +4,274 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Filaman Digital Swatches — USB Flasher</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700&family=IBM+Plex+Mono:wght@500&family=Schibsted+Grotesk:wght@600;700&display=swap" rel="stylesheet">
   <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js"></script>
   <style>
     :root {
-      --bg: #0a0e14;
-      --panel: #121820;
-      --text: #f2f5f8;
-      --muted: #8b98a8;
-      --accent: #3ddc97;
-      --warn: #f0a030;
-      --danger: #e85d5d;
-      --link: #5aa7ff;
-      --border: #2a3544;
+      --ink: #070a0f;
+      --card: #111823;
+      --inset: #0b1017;
+      --text: #eef2f7;
+      --muted: #8a99ad;
+      --line: #222f42;
+      --mint: #3ddc97;
+      --blue: #5aa7ff;
+      --amber: #ffb443;
+      --danger: #ff5c6a;
+      --olive: #7d9a45;
+      --lemon: #e6c85c;
+      --orange: #ef8a32;
+      --klein: #3d7dff;
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
       min-height: 100vh;
-      font-family: "Segoe UI", system-ui, sans-serif;
-      background:
-        radial-gradient(ellipse 80% 50% at 50% -10%, #1a3a2a 0%, transparent 55%),
-        var(--bg);
-      color: var(--text);
+      font-family: Figtree, "Segoe UI", sans-serif;
+      font-size: 16px;
       line-height: 1.5;
+      background:
+        radial-gradient(ellipse 70% 40% at 12% -10%, rgba(61, 220, 151, .14), transparent 60%),
+        radial-gradient(ellipse 50% 36% at 100% 0%, rgba(90, 167, 255, .12), transparent 55%),
+        var(--ink);
+      color: var(--text);
+    }
+    a { color: var(--blue); }
+    a:focus-visible, button:focus-visible {
+      outline: 2px solid var(--amber);
+      outline-offset: 3px;
     }
     main {
-      max-width: 720px;
+      max-width: 880px;
       margin: 0 auto;
-      padding: 2.5rem 1.25rem 3rem;
+      padding: 2.25rem 1.25rem 3.5rem;
+    }
+    .mast {
+      display: flex;
+      gap: 1rem;
+      align-items: flex-start;
+      margin-bottom: 1.75rem;
+    }
+    .swatch {
+      display: grid;
+      grid-template-columns: repeat(4, 14px);
+      gap: 5px;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--inset);
+      flex: none;
+    }
+    .swatch i {
+      display: block;
+      height: 46px;
+      border-radius: 4px;
+    }
+    .swatch .olive { background: var(--olive); }
+    .swatch .lemon { background: var(--lemon); }
+    .swatch .orange { background: var(--orange); }
+    .swatch .klein { background: var(--klein); }
+    .kicker {
+      margin: 0 0 .2rem;
+      font-family: "IBM Plex Mono", ui-monospace, monospace;
+      font-size: .75rem;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: var(--mint);
     }
     h1 {
-      margin: 0 0 .35rem;
-      font-size: 1.75rem;
-      color: var(--accent);
-      letter-spacing: -0.02em;
+      margin: 0;
+      font-family: "Schibsted Grotesk", sans-serif;
+      font-weight: 700;
+      font-size: clamp(1.7rem, 3vw, 2.15rem);
+      letter-spacing: -.03em;
+      line-height: 1.1;
     }
-    .lead { color: var(--muted); margin: 0 0 1.5rem; }
-    .card {
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 1.25rem 1.35rem;
-      margin-bottom: 1.25rem;
+    .lead {
+      margin: .55rem 0 0;
+      max-width: 38rem;
+      color: var(--muted);
     }
-    h2 { margin: 0 0 .75rem; font-size: 1.15rem; }
-    ol { margin: 0; padding-left: 1.25rem; }
-    li { margin: .45rem 0; }
-    .choices {
+    .boards {
       display: grid;
       gap: 1rem;
-      margin: 1.25rem 0 .5rem;
     }
-    @media (min-width: 560px) {
-      .choices { grid-template-columns: 1fr 1fr; }
+    @media (min-width: 800px) {
+      .boards { grid-template-columns: 1fr 1fr; align-items: stretch; }
     }
-    .choice {
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 1rem;
+    .board {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 1.15rem 1.15rem 1rem;
       display: flex;
       flex-direction: column;
-      gap: .65rem;
-      min-height: 100%;
+      min-width: 0;
+    }
+    .board.crow { box-shadow: inset 0 3px 0 var(--mint); }
+    .board.wave { box-shadow: inset 0 3px 0 var(--blue); }
+    .board h2 {
+      margin: 0;
+      font-family: "Schibsted Grotesk", sans-serif;
+      font-size: 1.2rem;
+      letter-spacing: -.02em;
+    }
+    .board .who {
+      margin: .2rem 0 .85rem;
+      color: var(--muted);
+      font-size: .92rem;
+    }
+    ol {
+      margin: 0 0 1rem;
+      padding-left: 1.15rem;
+      font-size: .95rem;
+    }
+    li { margin: .35rem 0; }
+    .choices {
+      display: grid;
+      gap: .75rem;
+      margin-top: auto;
+    }
+    .choice {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: .9rem;
+      background: var(--inset);
+      display: flex;
+      flex-direction: column;
+      gap: .55rem;
     }
     .choice h3 {
       margin: 0;
-      font-size: 1.05rem;
+      font-size: .95rem;
+      font-family: "Schibsted Grotesk", sans-serif;
     }
     .choice p {
       margin: 0;
       color: var(--muted);
-      font-size: .9rem;
+      font-size: .88rem;
       flex: 1;
     }
-    .choice.keep { border-color: #2a5a44; }
-    .choice.reset { border-color: #5a3a3a; }
     .choice button {
       cursor: pointer;
-      font-size: 14px;
-      font-weight: 600;
-      padding: 10px 16px;
+      font: 600 .9rem/1 Figtree, sans-serif;
+      padding: .7rem .9rem;
       border: none;
-      border-radius: 8px;
+      border-radius: 9px;
       width: 100%;
     }
-    .choice.keep button {
-      background: var(--accent);
-      color: var(--bg);
-    }
-    .choice.reset button {
-      background: var(--danger);
-      color: #fff;
-    }
-    .choice button:hover { filter: brightness(1.08); }
-    .note { color: var(--muted); font-size: .9rem; margin: .75rem 0 0; }
-    a { color: var(--link); }
-    code {
-      font-size: .88em;
-      background: #182028;
-      padding: .1em .35em;
-      border-radius: 4px;
-    }
-    .meta {
-      display: flex;
-      flex-wrap: wrap;
-      gap: .5rem .85rem;
-      font-size: .85rem;
+    .choice.keep button { background: var(--mint); color: #06120c; }
+    .choice.reset button { background: transparent; color: var(--danger); border: 1px solid rgba(255, 92, 106, .55); }
+    .choice button:hover { filter: brightness(1.06); }
+    .host {
+      margin: .85rem 0 0;
+      font-family: "IBM Plex Mono", ui-monospace, monospace;
+      font-size: .78rem;
       color: var(--muted);
-      margin-bottom: 1.25rem;
     }
-    .meta span {
-      border: 1px solid var(--border);
-      border-radius: 999px;
-      padding: .15rem .65rem;
+    .host strong { color: var(--text); font-weight: 500; }
+    .after {
+      margin-top: 1rem;
+      padding: 1rem 1.15rem;
+      border-radius: 14px;
+      border: 1px dashed var(--line);
+      color: var(--muted);
+      font-size: .95rem;
+    }
+    .after strong { color: var(--text); }
+    code {
+      font-family: "IBM Plex Mono", ui-monospace, monospace;
+      font-size: .84em;
+      color: var(--text);
+    }
+    @media (prefers-reduced-motion: reduce) {
+      * { transition: none !important; }
     }
   </style>
 </head>
 <body>
   <main>
-    <h1>Filaman Digital Swatches</h1>
-    <p class="lead">
-      USB flash for 7″ ESP32-S3 panels: Elecrow CrowPanel and Waveshare
-      ESP32-S3-Touch-LCD-7. Use the section that matches your hardware —
-      the images are not interchangeable.
+    <header class="mast">
+      <div class="swatch" aria-hidden="true">
+        <i class="olive"></i>
+        <i class="lemon"></i>
+        <i class="orange"></i>
+        <i class="klein"></i>
+      </div>
+      <div>
+        <p class="kicker">Firmware 0.21.1 · Chrome or Edge</p>
+        <h1>Flash the panel that matches the card.</h1>
+        <p class="lead">
+          Filaman Digital Swatches runs on the Elecrow CrowPanel 7″ and the
+          Waveshare ESP32-S3-Touch-LCD-7. The images are not interchangeable.
+          Stay in the card for the board in your hand.
+        </p>
+      </div>
+    </header>
+
+    <div class="boards">
+      <section class="board crow" id="crowpanel">
+        <h2>CrowPanel 7″</h2>
+        <p class="who">Elecrow · 4 MB flash · CH340 USB</p>
+        <ol>
+          <li>Install a CH340 driver if the serial port does not appear.</li>
+          <li>Connect a USB data cable.</li>
+          <li>Use the buttons in this card only.</li>
+        </ol>
+        <div class="choices">
+          <div class="choice keep">
+            <h3>Keep settings</h3>
+            <p>Updates firmware and leaves Wi‑Fi, FilaMan, and the admin password. If asked to erase, choose No.</p>
+            <esp-web-install-button manifest="./manifest-update.json">
+              <button slot="activate" type="button">Keep Settings &amp; Update</button>
+            </esp-web-install-button>
+          </div>
+          <div class="choice reset">
+            <h3>Factory reset</h3>
+            <p>Full install. Erases saved settings. Use for a first flash or a blank screen.</p>
+            <esp-web-install-button manifest="./manifest-factory.json">
+              <button slot="activate" type="button">Factory Reset &amp; Install</button>
+            </esp-web-install-button>
+          </div>
+        </div>
+        <p class="host">Then open <strong>http://crowpanel.local/</strong></p>
+      </section>
+
+      <section class="board wave" id="waveshare-s3-lcd7">
+        <h2>Waveshare 7″</h2>
+        <p class="who">ESP32-S3-Touch-LCD-7 · 16 MB flash · native USB</p>
+        <ol>
+          <li>Plug into the board USB port.</li>
+          <li>No port? Hold BOOT, tap RESET, release BOOT.</li>
+          <li>Do not use the CrowPanel buttons.</li>
+        </ol>
+        <div class="choices">
+          <div class="choice keep">
+            <h3>Keep settings</h3>
+            <p>Waveshare app update only. Leave erase off so Wi‑Fi and FilaMan stay.</p>
+            <esp-web-install-button manifest="./manifest-update-waveshare-s3-lcd7.json">
+              <button slot="activate" type="button">Keep Settings &amp; Update</button>
+            </esp-web-install-button>
+          </div>
+          <div class="choice reset">
+            <h3>Factory reset</h3>
+            <p>Full 16 MB image. Use for a first flash or recovery.</p>
+            <esp-web-install-button manifest="./manifest-waveshare-s3-lcd7.json">
+              <button slot="activate" type="button">Factory Reset &amp; Install</button>
+            </esp-web-install-button>
+          </div>
+        </div>
+        <p class="host">Then open <strong>http://waveshare-ams.local/</strong></p>
+      </section>
+    </div>
+
+    <p class="after">
+      <strong>After the flash finishes,</strong> power-cycle the panel, join 2.4 GHz Wi‑Fi on the touchscreen, and set the FilaMan URL and API key at the address above.
+      This page needs Chrome or Edge over HTTPS, or <code>http://localhost</code>.
+      Setup notes are in the <a href="https://github.com/wolfrage76/Filaman-Digital-Swatches">project README</a>.
     </p>
-
-    <div class="meta">
-      <span>Firmware 0.21.1</span>
-      <span>ESP32-S3</span>
-      <span>Chrome / Edge</span>
-    </div>
-
-    <div class="card" id="crowpanel">
-      <h2>Elecrow CrowPanel 7″</h2>
-      <ol>
-        <li>Install the <b>CH340</b> USB-serial driver if your OS needs it.</li>
-        <li>Connect the CrowPanel with a USB <b>data</b> cable.</li>
-        <li>Pick an option below and select the CrowPanel serial port.</li>
-        <li>Wait for the flash to finish, then power-cycle or reset the panel.</li>
-      </ol>
-
-      <div class="choices">
-        <div class="choice keep">
-          <h3>Keep Settings</h3>
-          <p>
-            Updates firmware without wiping NVS. Keeps Wi‑Fi, FilaMan URL/key,
-            printer choice, and OTA password.
-            If the installer asks to <b>erase</b> the device, choose
-            <b>No</b>.
-          </p>
-          <esp-web-install-button manifest="./manifest-update.json">
-            <button slot="activate" type="button">Keep Settings &amp; Update</button>
-          </esp-web-install-button>
-        </div>
-
-        <div class="choice reset">
-          <h3>Factory Reset</h3>
-          <p>
-            Full install and erase. Wipes all saved settings. Use for first-time
-            flash or a blank screen after a bad update.
-          </p>
-          <esp-web-install-button manifest="./manifest-factory.json">
-            <button slot="activate" type="button">Factory Reset &amp; Install</button>
-          </esp-web-install-button>
-        </div>
-      </div>
-      <p class="note">
-        Default hostname after setup: <code>http://crowpanel.local/</code>
-      </p>
-    </div>
-
-    <div class="card" id="waveshare-s3-lcd7">
-      <h2>Waveshare ESP32-S3-Touch-LCD-7</h2>
-      <ol>
-        <li>Connect the board on its <b>USB</b> connector (Chrome / Edge).</li>
-        <li>If the port does not appear: hold <b>BOOT</b>, press <b>RESET</b>, release <b>BOOT</b>.</li>
-        <li>Pick Keep Settings or Factory Reset below — do not use the CrowPanel buttons.</li>
-      </ol>
-
-      <div class="choices">
-        <div class="choice keep">
-          <h3>Keep Settings</h3>
-          <p>
-            App update for Waveshare only. Keeps Wi‑Fi and FilaMan settings when
-            the installer is told not to erase.
-          </p>
-          <esp-web-install-button manifest="./manifest-update-waveshare-s3-lcd7.json">
-            <button slot="activate" type="button">Keep Settings &amp; Update</button>
-          </esp-web-install-button>
-        </div>
-
-        <div class="choice reset">
-          <h3>Factory Reset</h3>
-          <p>
-            Full 16&nbsp;MB image for Waveshare. Use for first flash or recovery.
-          </p>
-          <esp-web-install-button manifest="./manifest-waveshare-s3-lcd7.json">
-            <button slot="activate" type="button">Factory Reset &amp; Install</button>
-          </esp-web-install-button>
-        </div>
-      </div>
-      <p class="note">
-        Default hostname after setup: <code>http://waveshare-ams.local/</code>
-      </p>
-    </div>
-
-    <div class="card">
-      <p style="margin:0 0 .6rem"><b>After flashing</b></p>
-      <p class="note" style="margin:0">
-        Join Wi‑Fi on the device, then open the panel’s
-        <code>.local</code> address (or its IP) to set the FilaMan URL and API key.
-        Needs <b>Chrome or Edge</b> (Web Serial) over <b>HTTPS</b>
-        (or <code>http://localhost</code>).
-      </p>
-    </div>
   </main>
 </body>
 </html>
