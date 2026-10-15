@@ -13,6 +13,7 @@
 #include "filaman_client.h"
 #include "ota_update.h"
 #include "printer_select.h"
+#include "timezones.h"
 #include "touch_input.h"
 #include "ui.h"
 #include "wifi_setup.h"
@@ -66,6 +67,8 @@ lv_obj_t *kb = nullptr;
 lv_obj_t *tlsLabel = nullptr;
 lv_obj_t *updateProgressBar = nullptr;
 lv_obj_t *autoCheckLabel = nullptr;
+lv_obj_t *tzDropdown = nullptr;
+bool tzKeepRow = false;  // dropdown starts with "Keep current setting"
 int fieldCount = 0;
 bool tlsOn = false;
 bool confirmResetArmed = false;
@@ -124,6 +127,8 @@ void clearContent() {
   tlsLabel = nullptr;
   updateProgressBar = nullptr;
   autoCheckLabel = nullptr;
+  tzDropdown = nullptr;
+  tzKeepRow = false;
   if (backBtn) {
     if (pane == Pane::Home) {
       lv_obj_add_flag(backBtn, LV_OBJ_FLAG_HIDDEN);
@@ -659,11 +664,13 @@ void onSave(lv_event_t *) {
     }
   } else if (pane == Pane::Device) {
     next.otaHostname = fieldText(0);
-    const String tz = fieldText(1);
-    if (tz.length()) {
-      next.displayTimezone = tz;
+    if (tzDropdown) {
+      const int i = static_cast<int>(lv_dropdown_get_selected(tzDropdown)) - (tzKeepRow ? 1 : 0);
+      if (i >= 0 && i < kTimezoneCount) {
+        next.displayTimezone = kTimezones[i].posix;
+      }
     }
-    const String pass = fieldText(2);
+    const String pass = fieldText(1);
     if (pass.length()) {
       next.otaPassword = pass;
     }
@@ -1214,33 +1221,6 @@ void showDisplay() {
   addChoiceRow(cardSpool, "Critical", "Red alert threshold", kCritVals, kCritLbls, 3, CK_SPOOL_CRIT);
 }
 
-struct TzPreset {
-  const char *label;
-  const char *posix;
-};
-
-constexpr TzPreset kTzPresets[] = {
-    {"US East", "EST5EDT,M3.2.0,M11.1.0"},
-    {"US Central", "CST6CDT,M3.2.0,M11.1.0"},
-    {"US Mtn", "MST7MDT,M3.2.0,M11.1.0"},
-    {"US Pac", "PST8PDT,M3.2.0,M11.1.0"},
-    {"UTC", "UTC0"},
-    {"UK", "GMT0BST,M3.5.0/1,M10.5.0"},
-    {"EU Cent", "CET-1CEST,M3.5.0,M10.5.0/3"},
-};
-
-void onTzPresetPicked(lv_event_t *event) {
-  const int idx = static_cast<int>(reinterpret_cast<intptr_t>(lv_event_get_user_data(event)));
-  if (idx < 0 || idx >= static_cast<int>(sizeof(kTzPresets) / sizeof(kTzPresets[0]))) {
-    return;
-  }
-  if (fieldCount > 1 && fields[1]) {
-    lv_textarea_set_text(fields[1], kTzPresets[idx].posix);
-    setStatus(String("Selected ") + kTzPresets[idx].label + " (" + kTzPresets[idx].posix + ")",
-              COL_ACCENT);
-  }
-}
-
 void showDevice() {
   pane = Pane::Device;
   clearContent();
@@ -1253,34 +1233,41 @@ void showDevice() {
   addField(card, "Hostname", config().otaHostname.c_str(), false);
 
   lv_obj_t *tzCard = makeCard(col);
-  addCardHeader(tzCard, "Timezone", "Pick a preset or edit the POSIX rule directly.");
-  addField(tzCard, "POSIX TZ rule", config().displayTimezone.c_str(), false);
+  addCardHeader(tzCard, "Time zone", "Pick the place nearest you. Daylight saving is automatic.");
 
-  lv_obj_t *tzRow = lv_obj_create(tzCard);
-  lv_obj_remove_style_all(tzRow);
-  lv_obj_set_width(tzRow, lv_pct(100));
-  lv_obj_set_height(tzRow, LV_SIZE_CONTENT);
-  lv_obj_set_flex_flow(tzRow, LV_FLEX_FLOW_ROW_WRAP);
-  lv_obj_set_style_pad_column(tzRow, 6, 0);
-  lv_obj_set_style_pad_row(tzRow, 6, 0);
-  lv_obj_clear_flag(tzRow, LV_OBJ_FLAG_SCROLLABLE);
-
-  constexpr int kTzCount = static_cast<int>(sizeof(kTzPresets) / sizeof(kTzPresets[0]));
-  for (int i = 0; i < kTzCount; ++i) {
-    const bool active = (config().displayTimezone == kTzPresets[i].posix);
-    lv_obj_t *btn = lv_btn_create(tzRow);
-    lv_obj_set_height(btn, 36);
-    lv_obj_set_style_pad_hor(btn, 12, 0);
-    styleChip(btn, active, true);
-    lv_obj_set_style_min_height(btn, 36, 0);
-    lv_obj_add_event_cb(btn, onTzPresetPicked, LV_EVENT_CLICKED,
-                        reinterpret_cast<void *>(static_cast<intptr_t>(i)));
-    lv_obj_t *lbl = lv_label_create(btn);
-    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_color(lbl, lv_color_hex(active ? COL_BG : COL_TEXT), 0);
-    lv_label_set_text(lbl, kTzPresets[i].label);
-    lv_obj_center(lbl);
+  const int sel = timezone_index(config().displayTimezone);
+  tzKeepRow = sel < 0;
+  String opts;
+  opts.reserve(kTimezoneCount * 44);
+  if (tzKeepRow) {
+    opts += "Keep current setting";
   }
+  for (int i = 0; i < kTimezoneCount; ++i) {
+    if (opts.length()) {
+      opts += '\n';
+    }
+    opts += kTimezones[i].label;
+  }
+  tzDropdown = lv_dropdown_create(tzCard);
+  lv_obj_set_width(tzDropdown, lv_pct(100));
+  lv_dropdown_set_options(tzDropdown, opts.c_str());
+  lv_dropdown_set_selected(tzDropdown, tzKeepRow ? 0 : sel);
+  lv_obj_set_style_bg_color(tzDropdown, lv_color_hex(COL_INSET), 0);
+  lv_obj_set_style_border_color(tzDropdown, lv_color_hex(COL_BORDER), 0);
+  lv_obj_set_style_border_width(tzDropdown, 1, 0);
+  lv_obj_set_style_radius(tzDropdown, kRadiusChip, 0);
+  lv_obj_set_style_text_color(tzDropdown, lv_color_hex(COL_TEXT), 0);
+  lv_obj_set_style_text_font(tzDropdown, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_pad_ver(tzDropdown, 10, 0);
+  lv_obj_set_style_pad_hor(tzDropdown, 12, 0);
+  lv_obj_t *tzList = lv_dropdown_get_list(tzDropdown);
+  lv_obj_set_style_bg_color(tzList, lv_color_hex(COL_INSET), 0);
+  lv_obj_set_style_border_color(tzList, lv_color_hex(COL_BORDER), 0);
+  lv_obj_set_style_text_color(tzList, lv_color_hex(COL_TEXT), 0);
+  lv_obj_set_style_text_font(tzList, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_max_height(tzList, 300, 0);
+  lv_obj_set_style_bg_color(tzList, lv_color_hex(COL_ACCENT), LV_PART_SELECTED | LV_STATE_CHECKED);
+  lv_obj_set_style_text_color(tzList, lv_color_hex(COL_BG), LV_PART_SELECTED | LV_STATE_CHECKED);
 
   lv_obj_t *secCard = makeCard(col);
   addCardHeader(secCard, "Security", "Protects the web console and wireless OTA flashing.");
