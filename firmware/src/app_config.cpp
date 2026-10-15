@@ -110,11 +110,29 @@ void AppConfig::load() {
     displayTimezone = DISPLAY_TIMEZONE;
   }
   autoCheckUpdates = p.getBool("autoOta", false);
+#if __has_include("secrets.h")
+  // Settings never saved from the UI live only as secrets.h macros. Persist
+  // them so a later OTA to a public build (placeholder defaults) keeps them.
+  bool seedNvs = false;
+  for (const char *key : {"wifiSsid", "wifiPass", "mqttHost", "mqttPort", "mqttUser",
+                          "mqttPass", "topicPfx", "fmUrl", "fmKey", "fmPrinter", "fmTls",
+                          "otaHost", "otaPass", "tz"}) {
+    if (!p.isKey(key)) {
+      seedNvs = true;
+      break;
+    }
+  }
+#endif
   p.end();
   normalizeDisplayTimeouts(displayDimMin, displayOffMin);
   normalizeBrightness(displayFullBrightPct, displayDimBrightPct);
   normalizeSpoolThresholds(spoolLowPct, spoolCritPct);
   normalizeIdleReturn(idleReturnSec);
+#if __has_include("secrets.h")
+  if (seedNvs) {
+    save();
+  }
+#endif
 }
 
 void AppConfig::save() const {
