@@ -7,6 +7,11 @@ void ota_begin();
 void ota_loop();
 bool ota_is_active();
 
+// Records when this firmware version first saw a real (NTP) clock. Call from
+// loop(); cheap once stamped. ota_installed_at() is 0 until then (Unix seconds).
+void ota_install_stamp_loop();
+uint32_t ota_installed_at();
+
 // Compare semantic versions (ignoring leading 'v'). Returns >0 if a > b, 0 if equal, <0 if a < b.
 int ota_compare_versions(const String &a, const String &b);
 
