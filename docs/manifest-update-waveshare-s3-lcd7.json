@@ -1,6 +1,6 @@
 {
   "name": "Digital Swatch System (Waveshare)",
-  "version": "0.21.4",
+  "version": "0.22.0",
   "new_install_prompt_erase": true,
   "builds": [
     {
