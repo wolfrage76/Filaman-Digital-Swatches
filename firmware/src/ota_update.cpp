@@ -9,6 +9,7 @@
 #include <Preferences.h>
 #include <WiFiClientSecure.h>
 #include <time.h>
+#include <esp_heap_caps.h>
 #include <esp_ota_ops.h>
 #include <esp_system.h>
 
@@ -169,8 +170,9 @@ int comparePrereleaseTags(const String &a, const String &b) {
 }
 
 // Newest GitHub pre-release that carries this board's app image. The list
-// response is large (release notes, asset metadata), so it is filtered while
-// streaming instead of being read into a String.
+// response is large (~50 KB of notes and asset metadata), so it is read into
+// PSRAM first and filtered while parsing. Parsing straight off the TLS stream
+// gave up on short network stalls.
 bool fetchNewestPrerelease(String &versionOut, String &urlOut, String &errorOut) {
   versionOut = "";
   urlOut = "";
@@ -194,6 +196,33 @@ bool fetchNewestPrerelease(String &versionOut, String &urlOut, String &errorOut)
     errorOut = String("GitHub HTTP ") + code;
     return false;
   }
+  constexpr size_t kMaxBody = 160 * 1024;
+  char *body = static_cast<char *>(heap_caps_malloc(kMaxBody, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (!body) {
+    drainHttp(http);
+    http.end();
+    errorOut = "No memory for GitHub release list";
+    return false;
+  }
+  size_t len = 0;
+  WiFiClient *stream = http.getStreamPtr();
+  const unsigned long deadline = millis() + 20000;
+  while (stream && len < kMaxBody && millis() < deadline) {
+    const int avail = stream->available();
+    if (avail > 0) {
+      const size_t want = min(static_cast<size_t>(avail), kMaxBody - len);
+      const int n = stream->readBytes(body + len, want);
+      if (n > 0) {
+        len += n;
+      }
+    } else if (!stream->connected()) {
+      break;  // HTTP/1.0: the server closes the connection after the body
+    } else {
+      delay(5);
+    }
+  }
+  http.end();
+
   JsonDocument filter;
   filter[0]["tag_name"] = true;
   filter[0]["prerelease"] = true;
@@ -202,10 +231,11 @@ bool fetchNewestPrerelease(String &versionOut, String &urlOut, String &errorOut)
   filter[0]["assets"][0]["browser_download_url"] = true;
   JsonDocument doc;
   const DeserializationError err =
-      deserializeJson(doc, http.getStream(), DeserializationOption::Filter(filter));
-  http.end();
+      deserializeJson(doc, static_cast<const char *>(body), len,
+                     DeserializationOption::Filter(filter));
+  heap_caps_free(body);
   if (err) {
-    errorOut = "GitHub release list parse failed";
+    errorOut = String("GitHub release list ") + err.c_str() + " (" + len + " bytes)";
     return false;
   }
   for (JsonObject rel : doc.as<JsonArray>()) {
