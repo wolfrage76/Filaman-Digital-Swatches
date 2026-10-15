@@ -13,7 +13,7 @@ Firmware **v0.21.2**. CrowPanel and Waveshare share the UI and use different ima
 | App image | `firmware-crowpanel-s3-lcd7.bin` | `firmware-waveshare-s3-lcd7.bin` |
 | GitHub update download | `firmware.bin` (same bytes as the CrowPanel app) | `firmware-waveshare-s3-lcd7.bin` |
 
-A local `secrets.h` that defines `OTA_HOSTNAME` replaces the hostname above on whichever board you compile.
+`include/secrets.h` is optional. Copy it from `include/secrets.h.example` only if you want compile-time defaults for panels you flash yourself. The first boot of such a build saves them to the panel. An `OTA_HOSTNAME` there replaces the hostname above on whichever board you compile.
 
 ## Web flasher
 
@@ -30,8 +30,6 @@ https://wolfrage76.github.io/Filaman-Digital-Swatches/
 
 ```bash
 cd firmware
-cp include/secrets.h.example include/secrets.h   # first time only
-
 ../.venv/bin/pio run -e crowpanel_7_idf -t upload
 ../.venv/bin/pio run -e waveshare-s3-lcd7 -t upload
 ```
@@ -42,7 +40,7 @@ On the panel: **Menu → Firmware Update → Check for updates**. The version st
 
 From the LAN, `POST` the matching `.bin` to `http://<panel-ip>/update`.
 
-`./ota.sh` builds and sends **CrowPanel** only (`crowpanel.local`, or an IP argument). Waveshare:
+`./ota.sh` builds and sends **CrowPanel** only (`crowpanel.local`, or an IP argument). The password is the panel's **OTA / Config Password**. The script reads it from `OTA_PASSWORD` in the environment, or from `secrets.h` if present, and sends none otherwise. Leave `OTA_PASSWORD` unset below when the panel has no password. Both boards:
 
 ```bash
 cd firmware
@@ -55,13 +53,11 @@ OTA_PASSWORD=yourpass ../.venv/bin/pio run -e waveshare-s3-lcd7_ota -t upload \
 
 ## Publish images for GitHub Pages
 
-`build_factory.sh` refuses to run while `include/secrets.h` is present.
+`build_factory.sh` refuses to run while `include/secrets.h` is present. If you keep one, move it aside for the build.
 
 ```bash
 cd firmware
-mv include/secrets.h include/secrets.h.local   # if present
 ./webflasher/build_factory.sh
-mv include/secrets.h.local include/secrets.h
 ```
 
 Before you commit `docs/firmware/`:
@@ -70,7 +66,7 @@ Before you commit `docs/firmware/`:
 - `firmware.bin` matches `firmware-crowpanel-s3-lcd7.bin`.
 - The five manifests under `docs/` show that same version.
 - The binaries do not contain your Wi‑Fi password or FilaMan API key.
-- `include/secrets.h` is not staged.
+- `include/secrets.h`, if you keep one, is not staged.
 
 ## Add a board
 
