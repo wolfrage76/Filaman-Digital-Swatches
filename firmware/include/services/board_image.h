@@ -3,8 +3,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
-// Embeds "FilamanSwatches-board:<BOARD_ID>\n" in the image so an OTA upload
-// for the wrong board can be refused.
+// Embeds "FilamanSwatches-board:<BOARD_ID>\n" so an OTA upload for the wrong
+// board can be refused. The marker text stays as-is so panels already in the
+// field still accept updates.
 
 const char *boardImageMarker();
 

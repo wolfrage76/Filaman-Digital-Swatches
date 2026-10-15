@@ -187,7 +187,7 @@ bool ota_check_github_update(String &latestVersionOut, String &downloadUrlOut, S
     http.setReuse(false);
     http.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
     if (http.begin(secure, kReleasesApiUrl)) {
-      http.addHeader("User-Agent", String("FilamanSwatches/") + BOARD_ID);
+      http.addHeader("User-Agent", String("DigitalSwatchSystem/") + BOARD_ID);
       http.addHeader("Accept", "application/vnd.github+json");
       const int code = http.GET();
       if (code == 200) {
@@ -282,7 +282,7 @@ bool ota_install_github_update(const String &downloadUrl,
     errorOut = "HTTP begin failed";
     return false;
   }
-  http.addHeader("User-Agent", String("FilamanSwatches-") + BOARD_ID);
+  http.addHeader("User-Agent", String("DigitalSwatchSystem-") + BOARD_ID);
 
   const int code = http.GET();
   if (code != 200) {

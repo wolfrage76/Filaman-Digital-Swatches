@@ -199,7 +199,7 @@ void sendStatusPage(int httpCode, const char *badge, const String &title, const 
   h += String(refreshSec);
   h += ";url=/'><title>";
   h += title;
-  h += " - Filaman Digital Swatches</title><style>"
+  h += " - Digital Swatch System</title><style>"
        ":root{--bg:#070a0f;--card:#10161f;--border:#222e3e;--text:#eef2f7;--muted:#8a99ad;"
        "--accent:#3ddc97;--danger:#ff5c6a}"
        "*{box-sizing:border-box}body{margin:0;min-height:100vh;display:flex;align-items:center;"
@@ -255,7 +255,7 @@ void handleRoot() {
   h.reserve(14500);
   h += "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-       "<title>Filaman Digital Swatches · Console</title><style>"
+       "<title>Digital Swatch System · Console</title><style>"
        ":root{"
        "--bg:#070a0f;--bg-elev:#0d131c;--card:#111823;--card-2:#151f2d;"
        "--border:#222f42;--border-soft:#1a2433;--text:#eef2f7;--muted:#8a99ad;--dim:#59687b;"
@@ -387,7 +387,7 @@ void handleRoot() {
   h += "<header class='topbar'><div class='brand'>"
        "<div class='swatch-mark'><span class='sm-1'></span><span class='sm-2'></span>"
        "<span class='sm-3'></span><span class='sm-4'></span></div>"
-       "<div><h1 class='brand-title'>Filaman Digital Swatches</h1>"
+       "<div><h1 class='brand-title'>Digital Swatch System</h1>"
        "<p class='brand-sub'>" BOARD_MODEL " Hardware Configuration Console</p></div></div>"
        "<div class='telemetry'>"
        "<span class='chip'><span class='dot'></span><strong>";
@@ -713,7 +713,7 @@ void handleDiagnostics() {
   h +=
       "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
       "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-      "<title>Diagnostics - Filaman Digital Swatches</title><style>"
+      "<title>Diagnostics - Digital Swatch System</title><style>"
       ":root{--bg:#070a0f;--card:#111823;--card2:#151f2d;--border:#222f42;"
       "--soft:#1a2433;--text:#eef2f7;--muted:#8a99ad;--dim:#59687b;"
       "--accent:#3ddc97;--danger:#ff5c6a;--mono:'JetBrains Mono',ui-monospace,"
@@ -767,7 +767,7 @@ void handleDiagnostics() {
       ".note{color:var(--muted);font-size:11px;line-height:1.5;margin:10px 0 0}"
       "</style></head><body><main class='shell'>"
       "<header class='top'><div class='brand'><div class='mark'><i></i><i></i><i></i><i></i></div>"
-      "<div><h1>System Diagnostics</h1><div class='sub'>Filaman Digital Swatches hardware console</div>"
+      "<div><h1>System Diagnostics</h1><div class='sub'>Digital Swatch System hardware console</div>"
       "</div></div><div class='live'><span class='dot'></span>LIVE &nbsp; v";
   h += esc(String(FIRMWARE_VERSION));
   h += "</div></header><nav class='tabs' aria-label='Console sections'>"
