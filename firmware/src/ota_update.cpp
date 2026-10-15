@@ -6,11 +6,14 @@
 #include <Update.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
+#include <esp_ota_ops.h>
+#include <esp_system.h>
 
 #include "app_config.h"
 #include "boards/board.h"
 #include "config.h"
 #include "device_log.h"
+#include "hardware/panel.h"
 #include "services/board_image.h"
 #include "ui/menu_ui.h"
 #include "ui/ui.h"
@@ -130,6 +133,25 @@ void rememberCheckResult(const String &ver, const String &url) {
 }
 
 }  // namespace
+
+// Every update path (ArduinoOTA, web /update, GitHub) ends in
+// esp_ota_set_boot_partition, which maps the new image to verify it. The
+// panel's bounce-buffer ISR reading PSRAM during that remap is a CacheError
+// panic, so scanout stops first. -Wl,--wrap in platformio.ini routes the call
+// here. A failed switch leaves the old image bootable; restart to get the
+// screen back.
+extern "C" esp_err_t __real_esp_ota_set_boot_partition(const esp_partition_t *partition);
+
+extern "C" esp_err_t __wrap_esp_ota_set_boot_partition(const esp_partition_t *partition) {
+  panelStopScanout();
+  const esp_err_t err = __real_esp_ota_set_boot_partition(partition);
+  if (err != ESP_OK) {
+    device_logf("OTA: boot switch failed 0x%x, restarting", static_cast<unsigned>(err));
+    delay(500);
+    esp_restart();
+  }
+  return err;
+}
 
 int ota_compare_versions(const String &a, const String &b) {
   int pa[3], pb[3];

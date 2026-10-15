@@ -48,7 +48,7 @@
 #define FILAMAN_TLS_INSECURE 1
 #endif
 
-constexpr const char *FIRMWARE_VERSION = "0.21.3";
+constexpr const char *FIRMWARE_VERSION = "0.21.4";
 constexpr int MQTT_SCHEMA_VERSION = 2;
 
 // OTA_HOSTNAME (secrets.h, optional) replaces the generated default hostname,

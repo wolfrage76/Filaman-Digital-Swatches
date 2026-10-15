@@ -9,6 +9,7 @@
 #include <TAMC_GT911.h>
 #include <Wire.h>
 #include <cstring>
+#include <esp_lcd_panel_ops.h>
 
 #include "soc/soc.h"
 #include "soc/usb_serial_jtag_reg.h"
@@ -57,6 +58,7 @@ Arduino_RGB_Display *gfx =
 TAMC_GT911 touch(hw_pins::TOUCH_SDA, hw_pins::TOUCH_SCL, -1, -1, TOUCH_MAP_X1, TOUCH_MAP_Y1);
 uint8_t gt911Addr = 0;
 bool touchReady = false;
+bool scanoutStopped = false;
 
 bool rawPressed = false;
 bool reportedPressed = false;
@@ -224,11 +226,25 @@ bool panelBegin() {
 }
 
 const uint16_t *panelFramebuffer() {
-  return gfx ? gfx->getFramebuffer() : nullptr;
+  return gfx && !scanoutStopped ? gfx->getFramebuffer() : nullptr;
+}
+
+void panelStopScanout() {
+  panelBacklightOff();
+  if (scanoutStopped) {
+    return;
+  }
+  scanoutStopped = true;
+#if DISPLAY_USE_BOUNCE_BUFFER
+  // panelHandle() is added to Arduino_GFX by patch_bounce.py.
+  if (esp_lcd_panel_handle_t handle = bus->panelHandle()) {
+    esp_lcd_panel_del(handle);
+  }
+#endif
 }
 
 void panelBlitStrip(int32_t x, int32_t y, int32_t w, int32_t h, const uint16_t *px) {
-  uint16_t *fb = gfx->getFramebuffer();
+  uint16_t *fb = scanoutStopped ? nullptr : gfx->getFramebuffer();
   if (!fb || !px || w <= 0 || h <= 0) {
     return;
   }

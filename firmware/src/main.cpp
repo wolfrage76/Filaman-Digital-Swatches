@@ -210,15 +210,10 @@ void onWifiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
     lastDisconnectReason = info.wifi_sta_disconnected.reason;
     device_logf("WiFi disconnect reason=%d", lastDisconnectReason);
   } else if (event == ARDUINO_EVENT_WIFI_STA_GOT_IP) {
+    // Runs on the WiFi event task. LVGL and the OTA/web servers belong to
+    // loop(), so maintainWifi() does the rest when it sees WL_CONNECTED.
     lastDisconnectReason = -1;
-    const String ip = WiFi.localIP().toString();
-    device_logf("WiFi got IP %s", ip.c_str());
-    ui_set_ip_address(ip);
-    const char *tz =
-        config().displayTimezone.length() ? config().displayTimezone.c_str() : "UTC0";
-    configTzTime(tz, "pool.ntp.org", "time.nist.gov");
-    ota_begin();
-    web_portal_begin();
+    device_logf("WiFi got IP %s", WiFi.localIP().toString().c_str());
   }
 }
 
@@ -280,6 +275,9 @@ void maintainWifi() {
       const String ip = WiFi.localIP().toString();
       ui_set_ip_address(ip);
       setStatus(String("WiFi ") + ip);
+      const char *tz =
+          config().displayTimezone.length() ? config().displayTimezone.c_str() : "UTC0";
+      configTzTime(tz, "pool.ntp.org", "time.nist.gov");
       ota_begin();
       web_portal_begin();
       showFilamanSetupIfNeeded(ip);
