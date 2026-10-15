@@ -1676,6 +1676,17 @@ void menu_open_update() {
   showUpdate();
 }
 
+void menu_open_filaman() {
+  if (!overlay) {
+    return;
+  }
+  wifi_setup_close();
+  printer_select_close();
+  lv_obj_clear_flag(overlay, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_move_foreground(overlay);
+  showFilaman();
+}
+
 void menu_close() {
   if (overlay) {
     clearContent();
