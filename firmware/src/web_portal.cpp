@@ -102,6 +102,36 @@ String pwField(const char *label, const char *name, const char *hint = nullptr) 
   return h;
 }
 
+// Preset buttons matching the panel's Display & Alerts pane. AppConfig snaps
+// stored values to these presets on load, so one option is always checked.
+String choiceField(const char *label, const char *hint, const char *name, const int *values,
+                   const char *const *labels, int count, int current) {
+  String h = "<div class='field'><span class='field-label'>";
+  h += label;
+  h += "</span><div class='seg' role='radiogroup'>";
+  for (int i = 0; i < count; ++i) {
+    h += "<label><input type='radio' name='";
+    h += name;
+    h += "' value='";
+    h += values[i];
+    h += "'";
+    if (values[i] == current) {
+      h += " checked";
+    }
+    h += "><span>";
+    h += labels[i];
+    h += "</span></label>";
+  }
+  h += "</div>";
+  if (hint && hint[0]) {
+    h += "<span class='field-hint'>";
+    h += hint;
+    h += "</span>";
+  }
+  h += "</div>";
+  return h;
+}
+
 String timezoneField(const String &current) {
   const int sel = timezone_index(current);
   String h =
@@ -456,6 +486,17 @@ void handleRoot() {
        ".after-split{margin-top:16px;padding-top:16px;border-top:1px solid var(--border-soft)}"
        ".after-split .subhead{margin-top:0}"
        ".after-split .field{max-width:480px}"
+       ".group-lead{margin:-4px 0 12px;font-size:12px;color:var(--muted)}"
+       ".seg{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:6px}"
+       ".seg label{position:relative;cursor:pointer}"
+       ".seg input{position:absolute;opacity:0;width:0;height:0;margin:0}"
+       ".seg span{display:block;padding:9px 4px;text-align:center;font-size:13px;font-weight:600;"
+       "font-variant-numeric:tabular-nums;color:var(--text);background:var(--bg-elev);"
+       "border:1px solid var(--border);border-radius:8px;transition:background .15s,border-color .15s,color .15s}"
+       ".seg label:hover span{border-color:#30425a}"
+       ".seg input:checked+span{background:var(--accent);border-color:var(--accent);color:#07120d}"
+       ".seg input:focus-visible+span{box-shadow:0 0 0 3px rgba(61,220,151,.25)}"
+       ".seg input:disabled+span{color:var(--dim);background:transparent;border-style:dashed;cursor:not-allowed}"
        ".group,.fw-split>div{min-width:0}"
        ".fw-notes-btns{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}"
        ".btn-quiet{background:transparent;color:var(--muted);border-color:var(--border);"
@@ -720,23 +761,46 @@ void handleRoot() {
   h += "</div></div></div></div>";
 
   h += "<div id='panel-display' class='panel'><div class='panel-head'>"
-       "<p class='band-lead'>Backlight, how soon the panel returns to the AMS view, and spool warnings.</p>"
+       "<p class='band-lead'>Backlight, sleep timers, navigation, and spool alerts &mdash; "
+       "the same choices as Display &amp; Alerts on the panel.</p>"
        "</div><div class='card'><div class='split-2'><div class='group'><p class='subhead'>Backlight</p>"
-       "<div class='row-2'>";
-  h += field("Normal Brightness %", "brtFull", String(c.displayFullBrightPct), "number",
-             "Recommended: 50 / 75 / 100");
-  h += field("Dimmed Brightness %", "brtDim", String(c.displayDimBrightPct), "number",
-             "Recommended: 10 / 20 / 35");
-  h += "</div></div><div class='group'><p class='subhead'>Spool warnings</p><div class='row-2'>";
-  h += field("Low Spool Warning %", "spLow", String(c.spoolLowPct), "number",
-             "Amber threshold (e.g. 20 / 30 / 40)");
-  h += field("Critical Spool Alert %", "spCrit", String(c.spoolCritPct), "number",
-             "Red alert threshold (e.g. 10 / 15 / 20)");
-  h += "</div></div></div>"
-       "<div class='after-split'><p class='subhead'>When idle</p>";
-  h += field("Auto-Return to AMS View (sec)", "idleSec", String(c.idleReturnSec), "number",
-             "Seconds of inactivity before returning to AMS View (0 = disabled, 60, 180)");
-  h += "</div></div></div>";
+       "<p class='group-lead'>Brightness while awake and when the panel soft-dims.</p>";
+  {
+    static constexpr int kFullVals[] = {50, 75, 100};
+    static constexpr const char *kFullLbls[] = {"50%", "75%", "100%"};
+    static constexpr int kDimVals[] = {10, 20, 35};
+    static constexpr const char *kDimLbls[] = {"10%", "20%", "35%"};
+    static constexpr int kTimeoutVals[] = {5, 10, 15, 30};
+    static constexpr const char *kTimeoutLbls[] = {"5m", "10m", "15m", "30m"};
+    static constexpr int kIdleVals[] = {0, 60, 180};
+    static constexpr const char *kIdleLbls[] = {"Off", "1 min", "3 min"};
+    static constexpr int kLowVals[] = {20, 30, 40};
+    static constexpr const char *kLowLbls[] = {"20%", "30%", "40%"};
+    static constexpr int kCritVals[] = {10, 15, 20};
+    static constexpr const char *kCritLbls[] = {"10%", "15%", "20%"};
+    h += choiceField("Awake", "Normal viewing brightness", "brtFull", kFullVals, kFullLbls, 3,
+                     c.displayFullBrightPct);
+    h += choiceField("Dimmed", "After idle, before the screen turns off", "brtDim", kDimVals,
+                     kDimLbls, 3, c.displayDimBrightPct);
+    h += "</div><div class='group'><p class='subhead'>Sleep timers</p>"
+         "<p class='group-lead'>Dim first, then blank the panel to save the backlight.</p>";
+    h += choiceField("Dim after", "Time idle before soft-dim", "dimMin", kTimeoutVals,
+                     kTimeoutLbls, 4, c.displayDimMin);
+    h += choiceField("Turn off after", "Must be longer than dim", "offMin", kTimeoutVals,
+                     kTimeoutLbls, 4, c.displayOffMin);
+    h += "</div></div><div class='split-2 after-split'><div class='group'>"
+         "<p class='subhead'>Navigation</p>"
+         "<p class='group-lead'>Return to AMS View when you walk away from other screens.</p>";
+    h += choiceField("Auto-return", "Inactivity timeout", "idleSec", kIdleVals, kIdleLbls, 3,
+                     c.idleReturnSec);
+    h += "</div><div class='group'><p class='subhead'>Spool alerts</p>"
+         "<p class='group-lead'>Remaining filament thresholds for amber warning and red critical.</p>";
+    h += choiceField("Low warning", "Amber threshold", "spLow", kLowVals, kLowLbls, 3,
+                     c.spoolLowPct);
+    h += choiceField("Critical", "Red alert threshold", "spCrit", kCritVals, kCritLbls, 3,
+                     c.spoolCritPct);
+  }
+  h += "</div></div></div></div>";
 
   h += "<div class='save-bar' id='saveBar'><div class='save-copy'>"
        "<strong>Apply configuration</strong> &mdash; Saves every setting on this page, "
@@ -807,6 +871,21 @@ function syncHost(){
 $('f_mdns').addEventListener('change',syncHost);
 $('f_otaHost').addEventListener('input',syncHost);
 syncHost();
+const TO=[5,10,15,30];
+function syncTimers(e){
+ const pick=n=>document.querySelector('input[name='+n+']:checked');
+ const d=pick('dimMin'),o=pick('offMin');
+ if(d&&o&&+d.value>=+o.value){
+  if(e&&e.target.name==='offMin'){const v=TO.filter(x=>x<+o.value).pop();
+   document.querySelector('input[name=dimMin][value="'+v+'"]').checked=true;}
+  else{const v=TO.find(x=>x>+d.value);
+   document.querySelector('input[name=offMin][value="'+v+'"]').checked=true;}
+ }
+ document.querySelectorAll('input[name=dimMin]').forEach(i=>i.disabled=+i.value>=TO[TO.length-1]);
+ document.querySelectorAll('input[name=offMin]').forEach(i=>i.disabled=+i.value<=TO[0]);
+}
+document.querySelectorAll('input[name=dimMin],input[name=offMin]').forEach(i=>i.addEventListener('change',syncTimers));
+syncTimers();
 let paused=false;
 const log=$('log');
 async function loadLog(){
@@ -879,6 +958,10 @@ void handleSave() {
     c.displayDimBrightPct = server.arg("brtDim").toInt();
   if (server.hasArg("idleSec") && server.arg("idleSec").length())
     c.idleReturnSec = server.arg("idleSec").toInt();
+  if (server.hasArg("dimMin") && server.arg("dimMin").length())
+    c.displayDimMin = server.arg("dimMin").toInt();
+  if (server.hasArg("offMin") && server.arg("offMin").length())
+    c.displayOffMin = server.arg("offMin").toInt();
   if (server.hasArg("spLow") && server.arg("spLow").length())
     c.spoolLowPct = server.arg("spLow").toInt();
   if (server.hasArg("spCrit") && server.arg("spCrit").length())
