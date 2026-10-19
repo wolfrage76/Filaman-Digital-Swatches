@@ -5,7 +5,6 @@
 #include <HTTPClient.h>
 #include <Update.h>
 #include <WiFi.h>
-#include <ESPmDNS.h>
 #include <Preferences.h>
 #include <WiFiClientSecure.h>
 #include <time.h>
@@ -634,8 +633,8 @@ void ota_begin() {
   }
 
   ArduinoOTA.setHostname(config().otaHostname.c_str());
-  // ArduinoOTA owns the mDNS responder: off means no <hostname>.local at all.
-  ArduinoOTA.setMdnsEnabled(config().mdnsEnabled);
+  // services/mdns_service owns the responder and advertises the OTA port.
+  ArduinoOTA.setMdnsEnabled(false);
   if (config().otaPassword.length() > 0) {
     ArduinoOTA.setPassword(config().otaPassword.c_str());
   }
@@ -671,9 +670,6 @@ void ota_begin() {
   });
 
   ArduinoOTA.begin();
-  if (config().mdnsEnabled) {
-    MDNS.addService("http", "tcp", 80);
-  }
   begun = true;
   device_logf("OTA ready as %s @ %s", config().otaHostname.c_str(),
               WiFi.localIP().toString().c_str());

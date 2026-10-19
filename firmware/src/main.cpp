@@ -19,6 +19,7 @@
 #include "mqtt_client.h"
 #include "ota_update.h"
 #include "services/board_image.h"
+#include "services/mdns_service.h"
 #include "printer_list.h"
 #include "touch_input.h"
 #include "ui/menu_ui.h"
@@ -235,12 +236,15 @@ void beginWifiJoin() {
 
 void startWifi() {
   WiFi.persistent(false);
+  // Core 3 hands the hostname to the station netif only when mode() switches
+  // the station on; set after mode(), the first DHCP request carried the
+  // default "esp32s3-XXXXXX".
+  WiFi.setHostname(config().otaHostname.c_str());
   WiFi.mode(WIFI_STA);
   // No modem sleep: with it the radio dozes between beacons and replies lag
   // by hundreds of ms, which made FilaMan polls and GitHub downloads time out.
   // Panels are mains-powered, so the extra radio current doesn't matter.
   WiFi.setSleep(WIFI_PS_NONE);
-  WiFi.setHostname(config().otaHostname.c_str());
   WiFi.onEvent(onWifiEvent);
   esp_wifi_set_ps(WIFI_PS_NONE);
   if (!config().wifiConfigured()) {
@@ -320,6 +324,7 @@ void maintainWifi() {
 
   wifiRetryCount++;
   device_log("WiFi reconnect attempt");
+  mdns_stop();
   WiFi.disconnect(/*wifioff=*/false, /*eraseap=*/false);
   delayWithDisplayPump(50);
   beginWifiJoin();
@@ -478,6 +483,7 @@ void loop() {
   }
 
   maintainWifi();
+  mdns_sync_state();
   if (WiFi.status() == WL_CONNECTED) {
     ota_loop();
     ota_auto_check_loop();

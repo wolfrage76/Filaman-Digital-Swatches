@@ -7,6 +7,7 @@
 
 #include "app_config.h"
 #include "menu_ui.h"
+#include "services/mdns_service.h"
 #include "touch_input.h"
 
 // Scan -> pick SSID -> type password -> save to NVS -> restart to connect.
@@ -157,6 +158,7 @@ void showScanList() {
   // A pending join (or the core's auto-reconnect) blocks scanning; stop it
   // first. maintainWifi() rejoins the saved network afterwards.
   if (WiFi.status() != WL_CONNECTED) {
+    mdns_stop();
     WiFi.disconnect(/*wifioff=*/false, /*eraseap=*/false);
     delay(100);
   }

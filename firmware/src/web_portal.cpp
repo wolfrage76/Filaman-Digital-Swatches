@@ -15,6 +15,7 @@
 #include "display_poll.h"
 #include "ota_update.h"
 #include "printer_list.h"
+#include "services/mdns_service.h"
 #include "timezones.h"
 
 namespace {
@@ -126,7 +127,10 @@ String timezoneField(const String &current) {
   return h;
 }
 
-String toggleField(const char *title, const char *subtitle, const char *name, bool checked) {
+// formId ties a switch to a form it does not sit inside. The firmware checks
+// live beside the version, while the rest of the settings post from /save.
+String toggleField(const char *title, const char *subtitle, const char *name, bool checked,
+                   const char *formId = nullptr) {
   String h = "<label class='toggle-row' for='f_";
   h += name;
   h += "'><div class='toggle-copy'><span class='toggle-title'>";
@@ -142,6 +146,11 @@ String toggleField(const char *title, const char *subtitle, const char *name, bo
   h += "' type='checkbox' name='";
   h += name;
   h += "'";
+  if (formId && formId[0]) {
+    h += " form='";
+    h += formId;
+    h += "'";
+  }
   if (checked) {
     h += " checked";
   }
@@ -241,9 +250,12 @@ void handleRoot() {
   const String dataMode = display_poll_active() ? display_poll_status() : String("MQTT Mode");
   const bool updateAvail = ota_update_available();
   const String latestVer = ota_cached_latest_version();
+  const uint32_t uptimeSec = millis() / 1000UL;
+  const uint32_t upHours = uptimeSec / 3600UL;
+  const uint32_t upMinutes = (uptimeSec % 3600UL) / 60UL;
 
   String h;
-  h.reserve(23000);
+  h.reserve(48000);
   h += "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
        "<title>Digital Swatch System · Console</title><style>"
@@ -279,15 +291,53 @@ void handleRoot() {
        ".dot{width:7px;height:7px;border-radius:50%;background:var(--accent);"
        "box-shadow:0 0 8px var(--accent)}"
        ".dot-warn{background:var(--warn);box-shadow:0 0 8px var(--warn)}"
-       ".tabs{display:flex;gap:6px;margin:-4px 0 18px;padding:5px;background:#0b1017;"
-       "border:1px solid var(--border-soft);border-radius:10px;width:max-content}"
+       ".tabs{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 22px;padding:5px;background:#0b1017;"
+       "border:1px solid var(--border-soft);border-radius:10px;width:fit-content;max-width:100%}"
        ".tab{padding:7px 13px;border-radius:6px;color:var(--muted);font-size:12px;font-weight:650;"
        "text-decoration:none;transition:background .15s,color .15s}"
        ".tab:hover{color:var(--text);background:var(--card-2)}"
        ".tab.active{color:#07120d;background:var(--accent)}"
+       ".tabs-on .panel{display:none}"
+       ".tabs-on #panel-status{display:block}"
+       ".tabs-on .panel.on{display:block}"
+       ".tabs-on.hide-status #panel-status{display:none}"
+       ".tabs-on #saveBar{display:none}"
+       ".tabs-on.save-on #saveBar{display:flex}"
+       ".panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;"
+       "margin:0 2px 12px}"
+       ".panel-head .band-lead{margin:0}"
+       ".host-line{display:flex;align-items:stretch}"
+       ".host-line input{border-top-right-radius:0;border-bottom-right-radius:0}"
+       ".host-line input:focus{box-shadow:none}"
+       ".host-suffix{display:flex;align-items:center;padding:0 12px;border:1px solid var(--border);"
+       "border-left:0;border-radius:0 8px 8px 0;background:#0b1017;color:var(--muted);"
+       "font-family:var(--mono);font-size:13px;white-space:nowrap}"
+       ".host-line.solo input{border-radius:8px}"
+       ".host-line.solo .host-suffix{display:none}"
+       ".host-line:focus-within input,.host-line:focus-within .host-suffix{border-color:var(--accent)}"
+       ".host-line:focus-within{box-shadow:0 0 0 3px rgba(61,220,151,.15);border-radius:8px}"
+       ".metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:0 0 16px}"
+       "@media(min-width:760px){.metrics{grid-template-columns:repeat(4,minmax(0,1fr))}}"
+       ".metric{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px;"
+       "box-shadow:inset 0 1px 0 rgba(255,255,255,.03)}"
+       ".metric span{display:block;color:var(--dim);font-size:10px;font-weight:700;letter-spacing:.09em;"
+       "text-transform:uppercase;margin-bottom:6px}"
+       ".metric strong{font:600 16px var(--mono);color:var(--text)}"
+       ".diag-grid{display:grid;grid-template-columns:1fr;gap:16px;margin-top:16px}"
+       "@media(min-width:760px){.diag-grid{grid-template-columns:minmax(0,1.65fr) minmax(260px,.7fr)}}"
+       ".actions{display:flex;flex-wrap:wrap;gap:8px}"
+       ".btn-danger{color:#ff9ca5;border-color:rgba(255,92,106,.45);background:transparent}"
+       ".btn-danger:hover{background:rgba(255,92,106,.08)}"
+       "#log{height:360px;margin:0;padding:14px;overflow:auto;background:#070b10;"
+       "border:1px solid var(--border-soft);border-radius:8px;color:#b9c8d9;"
+       "font:11px/1.55 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere}"
+       ".shot{aspect-ratio:5/3;border:1px solid var(--border-soft);border-radius:9px;margin-bottom:13px;"
+       "background:linear-gradient(135deg,#0c131c,#152335);display:flex;align-items:center;"
+       "justify-content:center;color:var(--dim);font:12px var(--mono);text-align:center;padding:20px}"
+       ".note{color:var(--muted);font-size:11px;line-height:1.5;margin:10px 0 0}"
        /* Security Banner */
        ".banner-warn{display:flex;align-items:center;justify-content:space-between;gap:12px;"
-       "padding:13px 18px;margin-bottom:18px;border-radius:11px;"
+       "padding:13px 18px;margin-bottom:26px;border-radius:11px;"
        "background:linear-gradient(90deg,rgba(255,92,106,.14),rgba(255,180,67,.08));"
        "border:1px solid rgba(255,92,106,.4);color:#ffd5d9;font-size:13px}"
        ".banner-warn strong{color:#fff;font-weight:650}"
@@ -297,8 +347,7 @@ void handleRoot() {
        ".row-2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}"
        /* Cards */
        ".card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);"
-       "padding:20px 22px;box-shadow:inset 0 1px 0 rgba(255,255,255,.03),0 8px 24px rgba(0,0,0,.25);"
-       "display:flex;flex-direction:column;justify-content:space-between}"
+       "padding:20px 22px;box-shadow:inset 0 1px 0 rgba(255,255,255,.03),0 8px 24px rgba(0,0,0,.25)}"
        ".card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;"
        "margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border-soft)}"
        ".card-eyebrow{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;"
@@ -321,6 +370,7 @@ void handleRoot() {
        "select{appearance:auto;cursor:pointer}"
        "input[type='number']{font-family:var(--mono);font-variant-numeric:tabular-nums}"
        "input:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(61,220,151,.15)}"
+       ".host-line input[type='text']{width:auto;flex:1;min-width:0}"
        "input::placeholder{color:var(--dim)}"
        /* Toggle Switch */
        ".toggle-row{display:flex;align-items:center;justify-content:space-between;gap:14px;"
@@ -338,7 +388,7 @@ void handleRoot() {
        ".toggle-input:checked+.toggle-track{background:rgba(61,220,151,.22);border-color:var(--accent)}"
        ".toggle-input:checked+.toggle-track .toggle-thumb{transform:translateX(18px);background:var(--accent)}"
        /* Printer Radio List */
-       ".printer-list{display:flex;flex-direction:column;gap:8px;margin-bottom:14px}"
+       ".printer-list{display:flex;flex-direction:column;gap:8px}"
        ".printer-item{display:flex;align-items:center;justify-content:space-between;gap:10px;"
        "padding:10px 13px;background:#0b1017;border:1px solid var(--border);border-radius:9px;"
        "cursor:pointer;transition:border-color .15s,background .15s}"
@@ -373,6 +423,40 @@ void handleRoot() {
        ".fw-row .v{color:var(--text);text-align:right;font-variant-numeric:tabular-nums}"
        ".fw-row .v.mono{font-family:var(--mono);font-weight:600}"
        ".fw-row .v.new{color:var(--accent)}"
+       ".band{margin:0 0 30px}"
+       ".band-kicker{display:flex;align-items:center;gap:12px;margin:0 2px 8px}"
+       ".band-kicker h2{margin:0;font-size:11px;font-weight:700;letter-spacing:.16em;"
+       "text-transform:uppercase;color:#9aabbe;white-space:nowrap}"
+       ".band-kicker .card-badge{flex:none}"
+       "#f_otaPass{scroll-margin-top:28px}"
+       ".band-rule{flex:1;height:1px;min-width:16px;background:linear-gradient(90deg,#314158,transparent)}"
+       ".band-lead{margin:0 2px 12px;max-width:68ch;color:var(--muted);font-size:13px;line-height:1.45}"
+       ".band .grid-2{margin-bottom:0}"
+       ".card.thread{box-shadow:inset 0 2px 0 rgba(61,220,151,.9),inset 0 1px 0 rgba(255,255,255,.03),"
+       "0 8px 24px rgba(0,0,0,.25)}"
+       ".fw-split{display:grid;grid-template-columns:1fr;gap:16px}"
+       ".split-2{display:grid;grid-template-columns:1fr}"
+       "@media(min-width:760px){.fw-split{grid-template-columns:minmax(0,1.15fr) minmax(268px,.85fr);"
+       "align-items:start;gap:22px}"
+       ".split-2{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}"
+       ".card>.btn{margin-top:14px}"
+       ".fw-side{display:flex;flex-direction:column;gap:8px;padding:14px;background:#0b1017;"
+       "border:1px solid var(--border-soft);border-radius:10px}"
+       ".fw-side .toggle-row{margin-top:0;background:#111823}"
+       ".subhead{margin:14px 0 8px;font-size:11px;font-weight:700;letter-spacing:.08em;"
+       "text-transform:uppercase;color:var(--dim)}"
+       ".group .subhead:first-child,.fw-side>.subhead{margin-top:0}"
+       ".split-2 .group+.group{padding-top:16px;border-top:1px solid var(--border-soft)}"
+       "@media(min-width:760px){.split-2 .group+.group{padding:0 0 0 26px;border-top:0;"
+       "border-left:1px solid var(--border-soft)}}"
+       ".install{display:flex;flex-direction:column;gap:8px;margin-top:4px;padding-top:12px;"
+       "border-top:1px solid var(--border-soft)}"
+       ".install .subhead{margin-top:0}"
+       ".install form{margin:0}"
+       ".after-split{margin-top:16px;padding-top:16px;border-top:1px solid var(--border-soft)}"
+       ".after-split .subhead{margin-top:0}"
+       ".after-split .field{max-width:480px}"
+       ".group,.fw-split>div{min-width:0}"
        ".fw-notes-btns{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}"
        ".btn-quiet{background:transparent;color:var(--muted);border-color:var(--border);"
        "padding:7px 13px;font-size:12px}"
@@ -388,7 +472,8 @@ void handleRoot() {
        "box-shadow:0 12px 32px rgba(0,0,0,.4)}"
        ".save-copy{font-size:13px;color:var(--muted)}"
        ".save-copy strong{color:var(--text);font-weight:600}"
-       "</style></head><body><div class='shell'>";
+       "</style><script>document.documentElement.classList.add('tabs-on')</script>"
+       "</head><body><div class='shell'>";
 
   // 1. Top Command Header
   h += "<header class='topbar'><div class='brand'>"
@@ -410,38 +495,104 @@ void handleRoot() {
   h += String(freeHeapKb);
   h += " KB</strong></span></div></header>"
        "<nav class='tabs' aria-label='Console sections'>"
-       "<a class='tab active' href='/'>Configuration</a>"
-       "<a class='tab' href='/diagnostics'>Diagnostics</a>"
+       "<a class='tab active' href='#panel-status'>Status</a>"
+       "<a class='tab' href='#panel-firmware'>Firmware</a>"
+       "<a class='tab' href='#panel-data'>Data</a>"
+       "<a class='tab' href='#panel-network'>Network</a>"
+       "<a class='tab' href='#panel-display'>Display</a>"
        "</nav>";
 
   // 2. Security Warning if no password is set
   if (c.otaPassword.length() == 0) {
     h += "<div class='banner-warn'><div><strong>Unprotected Console:</strong> "
          "No admin/OTA password is set. Anyone on your local network can modify settings or flash firmware.</div>"
-         "<a href='#f_otaPass' class='btn btn-secondary' style='padding:6px 12px;font-size:12px'>"
-         "Set Password</a></div>";
+         "<a href='#panel-network' class='btn btn-secondary' data-focus='f_otaPass' "
+         "style='padding:6px 12px;font-size:12px'>Set Password</a></div>";
   }
 
-  // 3. Top Quick-Action Cards: Monitored Printer + Firmware Update
-  h += "<div class='grid-2'>";
+  // Firmware is its own band. The two update-check switches post with the
+  // settings form (id=cfg) via the form attribute, so the install button
+  // does not save them.
+  h += "<section id='panel-firmware' class='panel'><div class='panel-head'>"
+       "<p class='band-lead'>The version on this panel, whether it should look for a newer one, "
+       "and how to install an update.</p>";
+  if (updateAvail && latestVer.length()) {
+    h += "<span class='card-badge live'>NEW v" + esc(latestVer) + "</span>";
+  } else {
+    h += "<span class='card-badge'>OTA Ready</span>";
+  }
+  h += "</div><div class='card thread'><div class='fw-split'><div>";
+  // Channel, dates and notes come from the GitHub API through the browser
+  // (script below). The install time is the device's own record.
+  h += "<div class='fw-rows'>"
+       "<div class='fw-row'><span class='k'>Installed</span><span class='v mono'>v";
+  h += esc(String(FIRMWARE_VERSION));
+  h += "</span></div>"
+       "<div class='fw-row'><span class='k'>Channel</span><span class='v' id='fwch'>&hellip;</span></div>"
+       "<div class='fw-row'><span class='k'>Released</span><span class='v' id='fwrel'>&hellip;</span></div>"
+       "<div class='fw-row'><span class='k'>Installed on</span><span class='v' id='fwsince' data-t='";
+  h += String(ota_installed_at());
+  h += "'>&hellip;</span></div>"
+       "<div class='fw-row'><span class='k'>Latest on GitHub</span><span class='v mono";
+  if (updateAvail) h += " new";
+  h += "' id='ghlat'>";
+  h += latestVer.length() ? "v" + esc(latestVer) : String("&hellip;");
+  h += "</span></div>"
+       "<div class='fw-row'><span class='k'>Latest released</span><span class='v' id='ghrel'>&hellip;</span></div>"
+       "</div><div class='fw-notes-btns'>"
+       "<button type='button' class='btn btn-quiet' id='fwnb' disabled>Release notes</button>"
+       "<button type='button' class='btn btn-quiet' id='ghnb' disabled>What's new</button></div>"
+       "<pre class='notes' id='fwn'></pre><pre class='notes' id='ghn'></pre>"
+       "<p class='field-hint' style='margin:0'>Release details are read from GitHub by this browser.</p>"
+       "</div><div class='fw-side'><p class='subhead'>Update checks</p>";
+  h += toggleField("Automatically Check for Firmware Updates",
+                   "Check GitHub Releases hourly and show an update badge on the display menu",
+                   "autoOta", c.autoCheckUpdates, "cfg");
+  h += toggleField("Include Beta Releases",
+                   "Also offer GitHub pre-releases. Betas are for testing and may have bugs; "
+                   "the web flasher only ever installs stable releases",
+                   "beta", c.betaUpdates, "cfg");
+  h += "<p class='field-hint'>Saved with the configuration at the bottom of this page.</p>"
+       "<div class='install'><p class='subhead'>Install</p>"
+       "<form method='POST' action='/github-update'>"
+       "<button class='btn btn-primary btn-block' type='submit'>"
+       "Check &amp; Install Latest Release from GitHub</button></form>"
+       "<a class='btn btn-secondary btn-block' href='/update'>"
+       "Upload Local .bin Firmware Over Wi-Fi</a>"
+       "</div></div></div></div></section>";
 
-  // Card A: Monitored Printer
+  // Printer selection posts on its own and must not nest inside the save form.
+  // Diagnostics lives here too: this is the first tab, so there is no separate page.
   PrinterOption printers[MAX_PRINTER_OPTIONS];
   String activeId;
   const int pn = printer_list_get(printers, MAX_PRINTER_OPTIONS, activeId);
-  h += "<form class='card' method='POST' action='/printer'><div>"
-       "<div class='card-head'><div><span class='card-eyebrow'>Live Target</span>"
-       "<h2 class='card-title'>Monitored Printer</h2>"
-       "<p class='card-desc'>Select which printer feed drives the AMS swatch display.</p></div>"
-       "<span class='card-badge'>";
-  h += String(pn) + (pn == 1 ? " Printer" : " Printers");
-  h += "</span></div>";
+  h += "<section id='panel-status' class='panel'><div class='panel-head'>"
+       "<p class='band-lead'>Which printer the swatches follow, and how this panel is running.</p>"
+       "</div><section class='metrics'>"
+       "<div class='metric'><span>Uptime</span><strong>";
+  h += String(upHours) + "h " + String(upMinutes) + "m";
+  h += "</strong></div><div class='metric'><span>Free Heap</span><strong>";
+  h += String(static_cast<uint32_t>(ESP.getFreeHeap()) / 1024U) + " KB";
+  h += "</strong></div><div class='metric'><span>Free PSRAM</span><strong>";
+  h += String(static_cast<uint32_t>(ESP.getFreePsram()) / 1024U) + " KB";
+  h += "</strong></div><div class='metric'><span>Wi-Fi RSSI</span><strong>";
+  h += WiFi.status() == WL_CONNECTED ? String(WiFi.RSSI()) + " dBm" : String("--");
+  h += "</strong></div><div class='metric'><span>IP Address</span><strong>";
+  h += esc(ipStr);
+  h += "</strong></div><div class='metric'><span>Data Source</span><strong>";
+  h += esc(dataMode);
+  h += "</strong></div><div class='metric'><span>Min Free Heap</span><strong>";
+  h += String(static_cast<uint32_t>(ESP.getMinFreeHeap()) / 1024U) + " KB";
+  h += "</strong></div><div class='metric'><span>Update Status</span><strong>";
+  h += updateAvail ? String("Available") : String("Current");
+  h += "</strong></div></section>";
+  h += "<form class='card' method='POST' action='/printer'>";
   if (pn == 0) {
     h += "<div class='empty-note'>";
     h += display_poll_active()
-             ? "No printers reported yet. Verify your FilaMan URL and API Key below."
+             ? "No printers reported yet. Check the FilaMan URL and API key on the Data tab."
              : "Waiting for printer discovery payload over MQTT...";
-    h += "</div></div></form>";
+    h += "</div></form>";
   } else {
     h += "<div class='printer-list'>";
     for (int i = 0; i < pn; ++i) {
@@ -465,59 +616,33 @@ void handleRoot() {
       }
       h += "</div></label>";
     }
-    h += "</div></div>"
+    h += "</div>"
          "<button class='btn btn-primary btn-block' type='submit'>Switch Monitored Printer</button>"
          "</form>";
   }
+  h += "<div class='diag-grid'><section class='card'><div class='card-head'><div>"
+       "<h3 class='card-title'>Firmware log</h3>"
+       "<p class='card-desc'>Connection, polling, update, and recovery events from this boot.</p>"
+       "</div><div class='actions'><button type='button' class='btn btn-secondary' id='pause'>Pause</button>"
+       "<button type='button' class='btn btn-danger' id='clear'>Clear</button></div></div>"
+       "<pre id='log'>Loading log...</pre></section>"
+       "<aside class='card'><div class='card-head'><div>"
+       "<h3 class='card-title'>Display screenshot</h3>"
+       "<p class='card-desc'>Capture the current 800 x 480 framebuffer.</p></div></div>"
+       "<div class='shot'>RGB565 framebuffer<br>800 x 480</div>"
+       "<a class='btn btn-primary btn-block' href='/screenshot.png' download='filaman-display.png'>"
+       "Download Current Screenshot</a>"
+       "<p class='note'>The image is the screen on the panel right now. "
+       "Encoding it as a PNG can take a few seconds.</p></aside></div></section>";
 
-  // Card B: Firmware & OTA Update
-  h += "<form class='card' method='POST' action='/github-update'><div>"
-       "<div class='card-head'><div><span class='card-eyebrow'>System Maintenance</span>"
-       "<h2 class='card-title'>Firmware Update</h2>"
-       "<p class='card-desc'>Install official GitHub releases or upload a local firmware binary.</p></div>";
-  if (updateAvail && latestVer.length()) {
-    h += "<span class='card-badge live'>NEW v" + esc(latestVer) + "</span>";
-  } else {
-    h += "<span class='card-badge'>OTA Ready</span>";
-  }
-  // Channel, dates and notes come from the GitHub API through the browser
-  // (script below). The install time is the device's own record.
-  h += "</div><div class='fw-rows'>"
-       "<div class='fw-row'><span class='k'>Installed</span><span class='v mono'>v";
-  h += esc(String(FIRMWARE_VERSION));
-  h += "</span></div>"
-       "<div class='fw-row'><span class='k'>Channel</span><span class='v' id='fwch'>&hellip;</span></div>"
-       "<div class='fw-row'><span class='k'>Released</span><span class='v' id='fwrel'>&hellip;</span></div>"
-       "<div class='fw-row'><span class='k'>Installed on</span><span class='v' id='fwsince' data-t='";
-  h += String(ota_installed_at());
-  h += "'>&hellip;</span></div>"
-       "<div class='fw-row'><span class='k'>Latest on GitHub</span><span class='v mono";
-  if (updateAvail) h += " new";
-  h += "' id='ghlat'>";
-  h += latestVer.length() ? "v" + esc(latestVer) : String("&hellip;");
-  h += "</span></div>"
-       "<div class='fw-row'><span class='k'>Latest released</span><span class='v' id='ghrel'>&hellip;</span></div>"
-       "</div><div class='fw-notes-btns'>"
-       "<button type='button' class='btn btn-quiet' id='fwnb' disabled>Release notes</button>"
-       "<button type='button' class='btn btn-quiet' id='ghnb' disabled>What's new</button></div>"
-       "<pre class='notes' id='fwn'></pre><pre class='notes' id='ghn'></pre>"
-       "<p class='field-hint' style='margin:0 0 10px'>Release details are read from GitHub by this browser.</p>";
-  h += "</div><div class='ota-actions'>"
-       "<button class='btn btn-primary btn-block' type='submit'>"
-       "Check &amp; Install Latest Release from GitHub</button>"
-       "<a class='btn btn-secondary btn-block' href='/update'>"
-       "Upload Local .bin Firmware Over Wi-Fi</a></div></form>";
+  h += "<form id='cfg' method='POST' action='/save'>";
 
-  h += "</div>";  // end top .grid-2
-
-  // 4. Main Configuration Form (/save)
-  h += "<form method='POST' action='/save'><div class='grid-2'>";
-
-  // Section 1: FilaMan API Integration
-  h += "<div class='card'><div><div class='card-head'><div>"
-       "<span class='card-eyebrow'>Primary Data Source</span>"
-       "<h2 class='card-title'>FilaMan Integration</h2>"
-       "<p class='card-desc'>Direct HTTP/HTTPS polling against your FilaMan spool inventory server.</p>"
+  h += "<div id='panel-data' class='panel'><div class='panel-head'>"
+       "<p class='band-lead'>FilaMan is used when a URL is set. Otherwise the panel listens on MQTT.</p>"
+       "</div><div class='grid-2'>";
+  h += "<div class='card'><div class='card-head'><div>"
+       "<h3 class='card-title'>FilaMan</h3>"
+       "<p class='card-desc'>HTTP or HTTPS polling of the spool inventory.</p>"
        "</div><span class='card-badge";
   if (display_poll_active()) h += " live";
   h += "'>";
@@ -530,73 +655,12 @@ void handleRoot() {
   h += toggleField("Allow Self-Signed LAN TLS",
                    "Skip certificate verification when connecting to FilaMan over local HTTPS",
                    "fmTls", c.filamanTlsInsecure);
-  h += "</div></div>";
-
-  // Section 2: Wi-Fi & Network Identity
-  h += "<div class='card'><div><div class='card-head'><div>"
-       "<span class='card-eyebrow'>Connectivity</span>"
-       "<h2 class='card-title'>Wi-Fi &amp; Network Identity</h2>"
-       "<p class='card-desc'>2.4 GHz wireless credentials, OTA hostname, and local clock timezone.</p>"
-       "</div><span class='card-badge'>";
-  h += esc(c.wifiSsid.length() ? c.wifiSsid : String("No SSID"));
-  h += "</span></div>";
-  h += field("Wi-Fi SSID (2.4 GHz)", "wifiSsid", c.wifiSsid, "text");
-  h += pwField("Wi-Fi Password", "wifiPass");
-  {
-    String hint = "The name your router shows, and the wireless update target. "
-                  "Clear it to restore the default.";
-    if (WiFi.status() == WL_CONNECTED) {
-      hint += "<br>Reachable at: ";
-      if (c.mdnsEnabled) {
-        hint += "http://" + esc(c.otaHostname) + ".local/ &middot; ";
-      }
-      hint += "http://" + WiFi.localIP().toString() + "/";
-    }
-    h += field("Device Hostname", "otaHost", c.otaHostname, "text", hint.c_str());
-  }
-  h += toggleField("Answer to .local on the local network (mDNS)",
-                   "Finds the panel by name with no DNS server involved. Turn off if your "
-                   "network should carry no .local traffic; wireless updates then use the IP.",
-                   "mdns", c.mdnsEnabled);
-  h += timezoneField(c.displayTimezone);
-  h += "</div></div>";
-
-  // Section 3: Display, Spool Thresholds & Auto-Update
-  h += "<div class='card'><div><div class='card-head'><div>"
-       "<span class='card-eyebrow'>Panel UX</span>"
-       "<h2 class='card-title'>Display, Alerts &amp; Updates</h2>"
-       "<p class='card-desc'>Backlight dimming, idle navigation timeout, and spool remaining alerts.</p>"
-       "</div><span class='card-badge'>800x480 RGB</span></div>";
-  h += "<div class='row-2'>";
-  h += field("Normal Brightness %", "brtFull", String(c.displayFullBrightPct), "number",
-             "Recommended: 50 / 75 / 100");
-  h += field("Dimmed Brightness %", "brtDim", String(c.displayDimBrightPct), "number",
-             "Recommended: 10 / 20 / 35");
-  h += "</div><div class='row-2'>";
-  h += field("Low Spool Warning %", "spLow", String(c.spoolLowPct), "number",
-             "Amber threshold (e.g. 20 / 30 / 40)");
-  h += field("Critical Spool Alert %", "spCrit", String(c.spoolCritPct), "number",
-             "Red alert threshold (e.g. 10 / 15 / 20)");
   h += "</div>";
-  h += field("Auto-Return to AMS View (sec)", "idleSec", String(c.idleReturnSec), "number",
-             "Seconds of inactivity before returning to AMS View (0 = disabled, 60, 180)");
-  h += toggleField("Automatically Check for Firmware Updates",
-                   "Check GitHub Releases hourly and show an update badge on the display menu",
-                   "autoOta", c.autoCheckUpdates);
-  h += toggleField("Include Beta Releases",
-                   "Also offer GitHub pre-releases. Betas are for testing and may have bugs; "
-                   "the web flasher only ever installs stable releases",
-                   "beta", c.betaUpdates);
-  h += "</div></div>";
 
-  // Section 4: MQTT Broker & Security
-  h += "<div class='card'><div><div class='card-head'><div>"
-       "<span class='card-eyebrow'>Fallback &amp; Auth</span>"
-       "<h2 class='card-title'>MQTT Broker &amp; Security</h2>"
-       "<p class='card-desc'>Optional MQTT telemetry broker and HTTP/OTA administrator password.</p>"
-       "</div><span class='card-badge'>";
-  h += c.otaPassword.length() ? "Auth Locked" : "Unlocked";
-  h += "</span></div>";
+  h += "<div class='card'><div class='card-head'><div>"
+       "<h3 class='card-title'>MQTT</h3>"
+       "<p class='card-desc'>Broker, account, and the topic this panel subscribes to.</p>"
+       "</div></div>";
   h += "<div class='row-2'>";
   h += field("MQTT Broker Host", "mqttHost", c.mqttHost, "text", nullptr, "192.168.1.10");
   h += field("MQTT Port", "mqttPort", String(c.mqttPort), "number");
@@ -606,15 +670,77 @@ void handleRoot() {
   h += "</div>";
   h += field("MQTT Topic Prefix", "topicPfx", c.topicPrefix, "text",
              "Base topic subscribed by the panel (e.g. filaman/display)");
+  h += "</div></div></div>";
+
+  h += "<div id='panel-network' class='panel'><div class='panel-head'>"
+       "<p class='band-lead'>Wi-Fi, the name on your network, the clock, and the password for this console.</p>"
+       "</div><div class='card'><div class='split-2'><div class='group'><p class='subhead'>Wireless</p>";
+  h += field("Wi-Fi SSID (2.4 GHz)", "wifiSsid", c.wifiSsid, "text");
+  h += pwField("Wi-Fi Password", "wifiPass");
+  h += "<p class='subhead'>Console access</p>";
   h += pwField("Admin / OTA Password", "otaPass",
                "Protects this web console (user: admin) and wireless OTA flashing");
-  h += "</div></div>";
+  h += "</div><div class='group'><p class='subhead'>Name and clock</p>";
+  {
+    String hostShown = c.otaHostname;
+    if (hostShown.endsWith(".local")) {
+      hostShown = hostShown.substring(0, hostShown.length() - 6);
+    }
+    String hint = "The name your router shows, and the wireless update target. "
+                  "Clear it to restore the default.";
+    if (WiFi.status() == WL_CONNECTED) {
+      hint += "<br>Reachable at: ";
+      if (mdns_running()) {
+        hint += "http://" + esc(hostShown) + ".local/ &middot; ";
+      }
+      hint += "http://" + WiFi.localIP().toString() + "/";
+    }
+    h += "<div class='field'><label class='field-label' for='f_otaHost'>Device Hostname</label>"
+         "<div class='host-line";
+    if (!c.mdnsEnabled) {
+      h += " solo";
+    }
+    h += "' id='hostLine'";
+    if (WiFi.status() == WL_CONNECTED) {
+      h += " data-ip='";
+      h += WiFi.localIP().toString();
+      h += "'";
+    }
+    h += "><input id='f_otaHost' type='text' name='otaHost' value='";
+    h += esc(hostShown);
+    h += "'><span class='host-suffix'>.local</span></div><span class='field-hint' id='hostHint'>";
+    h += hint;
+    h += "</span></div>";
+  }
+  h += toggleField("Answer to .local on the local network (mDNS)",
+                   "Finds the panel by name with no DNS server involved. Turn off if your "
+                   "network should carry no .local traffic; wireless updates then use the IP.",
+                   "mdns", c.mdnsEnabled);
+  h += timezoneField(c.displayTimezone);
+  h += "</div></div></div></div>";
 
-  h += "</div>";  // end form .grid-2
+  h += "<div id='panel-display' class='panel'><div class='panel-head'>"
+       "<p class='band-lead'>Backlight, how soon the panel returns to the AMS view, and spool warnings.</p>"
+       "</div><div class='card'><div class='split-2'><div class='group'><p class='subhead'>Backlight</p>"
+       "<div class='row-2'>";
+  h += field("Normal Brightness %", "brtFull", String(c.displayFullBrightPct), "number",
+             "Recommended: 50 / 75 / 100");
+  h += field("Dimmed Brightness %", "brtDim", String(c.displayDimBrightPct), "number",
+             "Recommended: 10 / 20 / 35");
+  h += "</div></div><div class='group'><p class='subhead'>Spool warnings</p><div class='row-2'>";
+  h += field("Low Spool Warning %", "spLow", String(c.spoolLowPct), "number",
+             "Amber threshold (e.g. 20 / 30 / 40)");
+  h += field("Critical Spool Alert %", "spCrit", String(c.spoolCritPct), "number",
+             "Red alert threshold (e.g. 10 / 15 / 20)");
+  h += "</div></div></div>"
+       "<div class='after-split'><p class='subhead'>When idle</p>";
+  h += field("Auto-Return to AMS View (sec)", "idleSec", String(c.idleReturnSec), "number",
+             "Seconds of inactivity before returning to AMS View (0 = disabled, 60, 180)");
+  h += "</div></div></div>";
 
-  // 5. Sticky / Prominent Save & Reboot Action Bar
-  h += "<div class='save-bar'><div class='save-copy'>"
-       "<strong>Apply Configuration</strong> &mdash; Saving writes settings to NVS flash and reboots the display."
+  h += "<div class='save-bar' id='saveBar'><div class='save-copy'>"
+       "<strong>Apply configuration</strong> &mdash; Saves every setting on this page, "
+       "including the firmware update checks, then reboots the display."
        "</div><button class='btn btn-primary' type='submit' style='min-width:210px'>"
        "Save Configuration &amp; Reboot</button></div></form>";
 
@@ -649,6 +775,53 @@ const newer=cmp(d.tag_name,INST)>0;l.classList.toggle('new',newer);
 $('ghrel').textContent=day(d.published_at);
 if(newer)notes('ghnb','ghn',"What's new",d.body||'');})
 .catch(()=>{$('ghrel').textContent='-';});
+document.querySelectorAll('a[href^="#panel-"]').forEach(a=>{
+ a.addEventListener('click',e=>{
+  const id=a.getAttribute('href').slice(1);
+  if(!$(id))return;
+  e.preventDefault();
+  show(id,true);
+  if(a.dataset.focus){const f=$(a.dataset.focus);if(f)f.focus();}
+ });
+});
+function show(id,push){
+ document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('on',p.id===id));
+ const settings=id!=='panel-status';
+ document.documentElement.classList.toggle('hide-status',settings);
+ document.documentElement.classList.toggle('save-on',settings);
+ document.querySelectorAll('nav .tab').forEach(t=>t.classList.toggle('active',t.getAttribute('href')==='#'+id));
+ if(push)history.replaceState(null,'','#'+id);
+}
+const start=(location.hash||'#panel-status').slice(1);
+if($(start))show(start,false);
+const hostLine=$('hostLine'),hostHint=$('hostHint');
+function syncHost(){
+ const on=$('f_mdns').checked;
+ hostLine.classList.toggle('solo',!on);
+ const name=($('f_otaHost').value||'').trim();
+ const ip=hostLine.dataset.ip||'';
+ let t='The name your router shows, and the wireless update target. Clear it to restore the default.';
+ if(ip){t+=' Reachable at: ';if(on&&name)t+='http://'+name+'.local/ · ';t+='http://'+ip+'/';}
+ hostHint.textContent=t;
+}
+$('f_mdns').addEventListener('change',syncHost);
+$('f_otaHost').addEventListener('input',syncHost);
+syncHost();
+let paused=false;
+const log=$('log');
+async function loadLog(){
+ if(paused||document.documentElement.classList.contains('hide-status'))return;
+ try{const r=await fetch('/diagnostics/logs',{cache:'no-store'});
+  if(!r.ok)return;
+  const atBottom=log.scrollTop+log.clientHeight>=log.scrollHeight-24;
+  log.textContent=await r.text();
+  if(atBottom)log.scrollTop=log.scrollHeight;
+ }catch(e){}
+}
+$('pause').onclick=()=>{paused=!paused;$('pause').textContent=paused?'Resume':'Pause';};
+$('clear').onclick=async()=>{await fetch('/diagnostics/logs',{method:'DELETE'});
+ paused=false;$('pause').textContent='Pause';loadLog();};
+loadLog();setInterval(loadLog,2500);
 </script></div></body></html>)JS";
   server.send(200, "text/html", h);
 }
@@ -679,7 +852,15 @@ void handleSave() {
   c.filamanApiKey = keepIfBlank("fmKey", c.filamanApiKey);
   if (server.hasArg("fmPrinter")) c.filamanPrinterId = server.arg("fmPrinter").toInt();
   c.filamanTlsInsecure = server.hasArg("fmTls");  // unchecked box sends nothing
-  if (server.hasArg("otaHost")) c.otaHostname = server.arg("otaHost");
+  if (server.hasArg("otaHost")) {
+    String host = server.arg("otaHost");
+    host.trim();
+    // .local is the mDNS suffix shown beside the field, not part of the name.
+    if (host.endsWith(".local")) {
+      host = host.substring(0, host.length() - 6);
+    }
+    c.otaHostname = host;
+  }
   c.mdnsEnabled = server.hasArg("mdns");
   if (server.hasArg("tzPreset")) {
     // Index into kTimezones; empty means "Keep current setting".
@@ -766,119 +947,9 @@ void handleDiagnostics() {
   if (!authOK()) {
     return;
   }
-  const uint32_t uptimeSec = millis() / 1000UL;
-  const uint32_t hours = uptimeSec / 3600UL;
-  const uint32_t minutes = (uptimeSec % 3600UL) / 60UL;
-  const String ip =
-      WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString() : String("Offline");
-
-  String h;
-  h.reserve(8500);
-  h +=
-      "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
-      "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-      "<title>Diagnostics - Digital Swatch System</title><style>"
-      ":root{--bg:#070a0f;--card:#111823;--card2:#151f2d;--border:#222f42;"
-      "--soft:#1a2433;--text:#eef2f7;--muted:#8a99ad;--dim:#59687b;"
-      "--accent:#3ddc97;--danger:#ff5c6a;--mono:'JetBrains Mono',ui-monospace,"
-      "SFMono-Regular,Menlo,Consolas,monospace}"
-      "*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse 90% 45% at 50% -10%,"
-      "rgba(61,220,151,.10),transparent 70%),var(--bg);color:var(--text);"
-      "font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;"
-      "font-size:14px;-webkit-font-smoothing:antialiased}"
-      ".shell{max-width:1020px;margin:auto;padding:24px 18px 56px}"
-      ".top{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px;"
-      "padding:18px 22px;background:rgba(17,24,35,.9);border:1px solid var(--border);"
-      "border-radius:14px;margin-bottom:18px;box-shadow:0 14px 34px rgba(0,0,0,.35)}"
-      ".brand{display:flex;align-items:center;gap:13px}.mark{display:grid;"
-      "grid-template-columns:repeat(4,6px);gap:3px;padding:7px;background:#0a0f16;"
-      "border:1px solid var(--border);border-radius:10px;height:40px}.mark i{border-radius:2px}"
-      ".mark i:nth-child(1){background:#3ddc97}.mark i:nth-child(2){background:#5aa7ff}"
-      ".mark i:nth-child(3){background:#ffb443}.mark i:nth-child(4){background:#ff5c6a}"
-      "h1{font-size:18px;margin:0;letter-spacing:-.02em}.sub{color:var(--muted);font-size:12px;margin-top:2px}"
-      ".live{display:flex;align-items:center;gap:7px;font:12px var(--mono);color:var(--muted);"
-      "padding:5px 11px;background:#0d131c;border:1px solid var(--border);border-radius:99px}"
-      ".dot{width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px var(--accent)}"
-      ".tabs{display:flex;gap:6px;margin:-4px 0 18px;padding:5px;background:#0b1017;"
-      "border:1px solid var(--soft);border-radius:10px;width:max-content}"
-      ".tab{padding:7px 13px;border-radius:6px;color:var(--muted);font-size:12px;font-weight:650;"
-      "text-decoration:none}.tab.active{color:#07120d;background:var(--accent)}"
-      ".metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:16px}"
-      "@media(min-width:700px){.metrics{grid-template-columns:repeat(4,minmax(0,1fr))}}"
-      ".metric,.card{background:var(--card);border:1px solid var(--border);border-radius:12px;"
-      "box-shadow:inset 0 1px 0 rgba(255,255,255,.03),0 8px 24px rgba(0,0,0,.22)}"
-      ".metric{padding:14px 16px}.metric span{display:block;color:var(--dim);font-size:10px;"
-      "font-weight:700;letter-spacing:.09em;text-transform:uppercase;margin-bottom:6px}"
-      ".metric strong{font:600 16px var(--mono);color:var(--text)}"
-      ".grid{display:grid;grid-template-columns:1fr;gap:16px}"
-      "@media(min-width:760px){.grid{grid-template-columns:minmax(0,1.65fr) minmax(260px,.7fr)}}"
-      ".card{padding:20px 22px}.head{display:flex;align-items:flex-start;justify-content:space-between;"
-      "gap:12px;padding-bottom:12px;margin-bottom:14px;border-bottom:1px solid var(--soft)}"
-      ".eyebrow{display:block;color:var(--accent);font-size:10px;font-weight:700;"
-      "letter-spacing:.1em;text-transform:uppercase;margin-bottom:3px}"
-      "h2{font-size:16px;margin:0}.desc{color:var(--muted);font-size:12px;margin:4px 0 0;line-height:1.5}"
-      ".actions{display:flex;flex-wrap:wrap;gap:9px}.btn{display:inline-flex;justify-content:center;"
-      "align-items:center;padding:9px 14px;border-radius:8px;border:1px solid var(--border);"
-      "background:var(--card2);color:var(--text);font:650 12px inherit;text-decoration:none;cursor:pointer}"
-      ".btn.primary{background:var(--accent);border-color:var(--accent);color:#07120d}"
-      ".btn.danger{color:#ff9ca5;border-color:rgba(255,92,106,.4)}"
-      "pre{height:390px;margin:0;padding:14px;overflow:auto;background:#070b10;"
-      "border:1px solid var(--soft);border-radius:8px;color:#b9c8d9;font:11px/1.55 var(--mono);"
-      "white-space:pre-wrap;overflow-wrap:anywhere}"
-      ".shot{aspect-ratio:5/3;border:1px solid var(--soft);border-radius:9px;margin-bottom:13px;"
-      "background:linear-gradient(135deg,#0c131c,#152335);display:flex;align-items:center;"
-      "justify-content:center;color:var(--dim);font:12px var(--mono);text-align:center;padding:20px}"
-      ".note{color:var(--muted);font-size:11px;line-height:1.5;margin:10px 0 0}"
-      "</style></head><body><main class='shell'>"
-      "<header class='top'><div class='brand'><div class='mark'><i></i><i></i><i></i><i></i></div>"
-      "<div><h1>System Diagnostics</h1><div class='sub'>Digital Swatch System hardware console</div>"
-      "</div></div><div class='live'><span class='dot'></span>LIVE &nbsp; v";
-  h += esc(String(FIRMWARE_VERSION));
-  h += "</div></header><nav class='tabs' aria-label='Console sections'>"
-       "<a class='tab' href='/'>Configuration</a>"
-       "<a class='tab active' href='/diagnostics'>Diagnostics</a></nav>"
-       "<section class='metrics'><div class='metric'><span>Uptime</span><strong>";
-  h += String(hours) + "h " + String(minutes) + "m";
-  h += "</strong></div><div class='metric'><span>Free Heap</span><strong>";
-  h += String(static_cast<uint32_t>(ESP.getFreeHeap()) / 1024U) + " KB";
-  h += "</strong></div><div class='metric'><span>Free PSRAM</span><strong>";
-  h += String(static_cast<uint32_t>(ESP.getFreePsram()) / 1024U) + " KB";
-  h += "</strong></div><div class='metric'><span>Wi-Fi RSSI</span><strong>";
-  h += WiFi.status() == WL_CONNECTED ? String(WiFi.RSSI()) + " dBm" : String("--");
-  h += "</strong></div><div class='metric'><span>IP Address</span><strong>";
-  h += esc(ip);
-  h += "</strong></div><div class='metric'><span>Data Source</span><strong>";
-  h += esc(display_poll_active() ? display_poll_status() : String("MQTT"));
-  h += "</strong></div><div class='metric'><span>Min Free Heap</span><strong>";
-  h += String(static_cast<uint32_t>(ESP.getMinFreeHeap()) / 1024U) + " KB";
-  h += "</strong></div><div class='metric'><span>Update Status</span><strong>";
-  h += ota_update_available() ? String("Available") : String("Current");
-  h += "</strong></div></section>"
-       "<div class='grid'><section class='card'><div class='head'><div>"
-       "<span class='eyebrow'>Recent Events</span><h2>Firmware Log</h2>"
-       "<p class='desc'>Connection, API polling, update, and recovery events from this boot.</p>"
-       "</div><div class='actions'><button class='btn' id='pause'>Pause</button>"
-       "<button class='btn danger' id='clear'>Clear</button></div></div>"
-       "<pre id='log'>Loading log...</pre></section>"
-       "<aside class='card'><div class='head'><div><span class='eyebrow'>Panel Output</span>"
-       "<h2>Display Screenshot</h2><p class='desc'>Capture the current 800 x 480 framebuffer.</p>"
-       "</div></div><div class='shot'>RGB565 framebuffer<br>800 x 480</div>"
-       "<a class='btn primary' style='width:100%' href='/screenshot.png' download='filaman-display.png'>"
-       "Download Current Screenshot</a>"
-       "<p class='note'>The image reflects the exact screen currently visible on the panel. "
-       "The download may take a few seconds while the framebuffer is encoded as PNG.</p></aside></div>"
-       "<script>"
-       "let paused=false;const log=document.getElementById('log'),pause=document.getElementById('pause');"
-       "async function load(){if(paused)return;try{const r=await fetch('/diagnostics/logs',{cache:'no-store'});"
-       "if(r.ok){const atBottom=log.scrollTop+log.clientHeight>=log.scrollHeight-24;"
-       "log.textContent=await r.text();if(atBottom)log.scrollTop=log.scrollHeight;}}catch(e){}}"
-       "pause.onclick=()=>{paused=!paused;pause.textContent=paused?'Resume':'Pause';};"
-       "document.getElementById('clear').onclick=async()=>{await fetch('/diagnostics/logs',{method:'DELETE'});"
-       "paused=false;pause.textContent='Pause';load();};load();setInterval(load,2500);"
-       "</script>";
-  h += footerLinks();
-  h += "</main></body></html>";
-  server.send(200, "text/html", h);
+  // The diagnostics view is the Status tab on the console.
+  server.sendHeader("Location", "/#panel-status");
+  server.send(303);
 }
 
 void handleDiagnosticLogs() {
@@ -1101,6 +1172,8 @@ void web_portal_begin() {
   server.begin();
   begun = true;
 }
+
+bool web_portal_running() { return begun; }
 
 void web_portal_loop() {
   if (begun) {

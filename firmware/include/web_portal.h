@@ -6,3 +6,4 @@
 
 void web_portal_begin();  // idempotent: starts the server once WiFi is up
 void web_portal_loop();   // pump the server (call from loop() when connected)
+bool web_portal_running();  // true once the server is listening
