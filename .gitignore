@@ -236,3 +236,7 @@ firmware/webflasher/firmware/
 bridge/nohup.out
 **/__pycache__/
 firmware/components/arduino
+# Rewritten by pioarduino from custom_sdkconfig on every board switch.
+firmware/sdkconfig.defaults
+firmware/dist/
+.claude/settings.local.json
