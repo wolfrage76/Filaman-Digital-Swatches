@@ -945,6 +945,7 @@ enum ChoiceKind : uint8_t {
   CK_SPOOL_CRIT,
   CK_DIM_MIN,
   CK_OFF_MIN,
+  CK_FLIP,
 };
 
 struct ChoiceRowCtx {
@@ -955,7 +956,7 @@ struct ChoiceRowCtx {
 
 // One context per option row in the Display pane. Reset in showDisplay();
 // row objects hold a pointer, so no heap churn on rebuild.
-ChoiceRowCtx choiceCtx[8];
+ChoiceRowCtx choiceCtx[10];
 int choiceCtxUsed = 0;
 
 int currentValForKind(ChoiceKind kind) {
@@ -974,6 +975,8 @@ int currentValForKind(ChoiceKind kind) {
       return config().displayDimMin;
     case CK_OFF_MIN:
       return config().displayOffMin;
+    case CK_FLIP:
+      return config().displayFlipped ? 1 : 0;
   }
   return 0;
 }
@@ -1065,6 +1068,14 @@ void onChoicePicked(lv_event_t *event) {
       config().setDisplayTimeouts(dim, value);
       break;
     }
+    case CK_FLIP:
+      config().setDisplayFlipped(value != 0);
+      // The finger that tapped is now over a different spot; make it lift
+      // before the next press, then repaint everything the other way up.
+      lv_indev_reset(nullptr, nullptr);
+      touch_input_cooldown(400);
+      lv_obj_invalidate(lv_scr_act());
+      break;
   }
   restyleChoiceRow(row);
   // A dim/off change can alter the allowed set of the sibling timeout row.
@@ -1219,6 +1230,12 @@ void showDisplay() {
   static constexpr int kCritVals[] = {10, 15, 20};
   static constexpr const char *kCritLbls[] = {"10%", "15%", "20%"};
   addChoiceRow(cardSpool, "Critical", "Red alert threshold", kCritVals, kCritLbls, 3, CK_SPOOL_CRIT);
+
+  lv_obj_t *cardFlip = makeCard(col);
+  addCardHeader(cardFlip, "Orientation", "Turn the picture and touch around if the panel is mounted upside down.");
+  static constexpr int kFlipVals[] = {0, 1};
+  static constexpr const char *kFlipLbls[] = {"Normal", "Flipped 180\xC2\xB0"};
+  addChoiceRow(cardFlip, "Screen", "Applies immediately", kFlipVals, kFlipLbls, 2, CK_FLIP);
 }
 
 void showDevice() {

@@ -761,7 +761,7 @@ void handleRoot() {
   h += "</div></div></div></div>";
 
   h += "<div id='panel-display' class='panel'><div class='panel-head'>"
-       "<p class='band-lead'>Backlight, sleep timers, navigation, and spool alerts &mdash; "
+       "<p class='band-lead'>Backlight, sleep timers, navigation, spool alerts, and orientation &mdash; "
        "the same choices as Display &amp; Alerts on the panel.</p>"
        "</div><div class='card'><div class='split-2'><div class='group'><p class='subhead'>Backlight</p>"
        "<p class='group-lead'>Brightness while awake and when the panel soft-dims.</p>";
@@ -800,7 +800,11 @@ void handleRoot() {
     h += choiceField("Critical", "Red alert threshold", "spCrit", kCritVals, kCritLbls, 3,
                      c.spoolCritPct);
   }
-  h += "</div></div></div></div>";
+  h += "</div></div><div class='after-split'><p class='subhead'>Orientation</p>";
+  h += toggleField("Flip the screen 180&deg;",
+                   "Turns the picture and touch around if the panel is mounted upside down.",
+                   "flip", c.displayFlipped);
+  h += "</div></div></div>";
 
   h += "<div class='save-bar' id='saveBar'><div class='save-copy'>"
        "<strong>Apply configuration</strong> &mdash; Saves every setting on this page, "
@@ -966,6 +970,7 @@ void handleSave() {
     c.spoolLowPct = server.arg("spLow").toInt();
   if (server.hasArg("spCrit") && server.arg("spCrit").length())
     c.spoolCritPct = server.arg("spCrit").toInt();
+  c.displayFlipped = server.hasArg("flip");
   c.autoCheckUpdates = server.hasArg("autoOta");
   c.betaUpdates = server.hasArg("beta");
   c.otaPassword = keepIfBlank("otaPass", c.otaPassword);
@@ -1186,11 +1191,14 @@ void handleScreenshot() {
     device_logf("PNG encode init failed (tdefl=%d)", static_cast<int>(st));
   }
 
+  // A flipped panel holds the picture upside down; save it the way it reads.
+  const bool flipped = config().displayFlipped;
   for (int y = 0; ok && png.ok && y < SCREEN_HEIGHT; ++y) {
     row[0] = 0;  // filter None
-    const uint16_t *src = framebuffer + static_cast<size_t>(y) * SCREEN_WIDTH;
+    const uint16_t *src =
+        framebuffer + static_cast<size_t>(flipped ? SCREEN_HEIGHT - 1 - y : y) * SCREEN_WIDTH;
     for (int x = 0; x < SCREEN_WIDTH; ++x) {
-      const uint16_t pixel = src[x];
+      const uint16_t pixel = src[flipped ? SCREEN_WIDTH - 1 - x : x];
       row[1 + x * 3 + 0] = static_cast<uint8_t>(((pixel >> 11) & 0x1F) * 255 / 31);
       row[1 + x * 3 + 1] = static_cast<uint8_t>(((pixel >> 5) & 0x3F) * 255 / 63);
       row[1 + x * 3 + 2] = static_cast<uint8_t>((pixel & 0x1F) * 255 / 31);

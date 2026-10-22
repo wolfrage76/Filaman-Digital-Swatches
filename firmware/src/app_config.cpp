@@ -121,6 +121,7 @@ void AppConfig::load() {
   spoolLowPct = p.getInt("spLow", SPOOL_LOW_PERCENT);
   spoolCritPct = p.getInt("spCrit", SPOOL_CRITICAL_PERCENT);
   idleReturnSec = p.getInt("idleSec", 60);
+  displayFlipped = p.getBool("flip", false);
   displayTimezone = p.getString("tz", DISPLAY_TIMEZONE);
   if (!displayTimezone.length()) {
     displayTimezone = DISPLAY_TIMEZONE;
@@ -176,6 +177,7 @@ void AppConfig::save() const {
   p.putInt("spLow", spoolLowPct);
   p.putInt("spCrit", spoolCritPct);
   p.putInt("idleSec", idleReturnSec);
+  p.putBool("flip", displayFlipped);
   p.putString("tz", displayTimezone);
   p.putBool("autoOta", autoCheckUpdates);
   p.putBool("beta", betaUpdates);
@@ -266,6 +268,17 @@ void AppConfig::setIdleReturnSec(int sec) {
   Preferences p;
   p.begin(kNs, /*readOnly=*/false);
   p.putInt("idleSec", idleReturnSec);
+  p.end();
+}
+
+void AppConfig::setDisplayFlipped(bool flipped) {
+  if (flipped == displayFlipped) {
+    return;
+  }
+  displayFlipped = flipped;
+  Preferences p;
+  p.begin(kNs, /*readOnly=*/false);
+  p.putBool("flip", displayFlipped);
   p.end();
 }
 

@@ -31,6 +31,7 @@ struct AppConfig {
   int spoolLowPct = SPOOL_LOW_PERCENT;        // 20, 30, 40
   int spoolCritPct = SPOOL_CRITICAL_PERCENT;  // 10, 15, 20
   int idleReturnSec = 60;           // 0 (off), 60, 180
+  bool displayFlipped = false;      // rotate the picture and touch 180 degrees
   String displayTimezone;
   bool autoCheckUpdates = false;    // periodically poll GitHub for newer firmware
   bool betaUpdates = false;         // also offer GitHub pre-releases (beta channel)
@@ -46,6 +47,7 @@ struct AppConfig {
   void setDisplayBrightness(int fullPct, int dimPct);
   void setSpoolThresholds(int lowPct, int critPct);
   void setIdleReturnSec(int sec);
+  void setDisplayFlipped(bool flipped);
   void setAutoCheckUpdates(bool enabled);
   void setBetaUpdates(bool enabled);
 };

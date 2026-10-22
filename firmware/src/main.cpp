@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <time.h>
+#include <algorithm>
 #include <cstring>
 #include <WiFi.h>
 #include <esp_heap_caps.h>
@@ -90,7 +91,15 @@ void pumpDisplay() {
 void flushDisplay(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p) {
   const int32_t w = area->x2 - area->x1 + 1;
   const int32_t h = area->y2 - area->y1 + 1;
-  panelBlitStrip(area->x1, area->y1, w, h, reinterpret_cast<const uint16_t *>(&color_p->full));
+  uint16_t *px = reinterpret_cast<uint16_t *>(&color_p->full);
+  if (config().displayFlipped) {
+    // 180 degrees: the strip's pixels in reverse order, at the mirrored spot.
+    // LVGL re-renders the whole draw buffer for every strip, so in place is safe.
+    std::reverse(px, px + static_cast<size_t>(w) * h);
+    panelBlitStrip(SCREEN_WIDTH - 1 - area->x2, SCREEN_HEIGHT - 1 - area->y2, w, h, px);
+  } else {
+    panelBlitStrip(area->x1, area->y1, w, h, px);
+  }
 #if !DISPLAY_USE_BOUNCE_BUFFER
   // Direct-PSRAM mode only: hand the PSRAM bus back to scanout after each strip.
   yield();
@@ -114,6 +123,10 @@ void readLvglTouch(lv_indev_drv_t *, lv_indev_data_t *data) {
   }
 
   if (pressed) {
+    if (config().displayFlipped) {
+      x = SCREEN_WIDTH - 1 - x;
+      y = SCREEN_HEIGHT - 1 - y;
+    }
     data->state = LV_INDEV_STATE_PR;
     data->point.x = x;
     data->point.y = y;
