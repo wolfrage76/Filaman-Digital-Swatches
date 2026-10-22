@@ -110,11 +110,14 @@ To test new features early, turn on **Include beta releases** on the panel's Fir
 
 ```text
 Printer → Bambuddy / FilaMan → GET /api/v1/display/printers/{id} → panel
+Printer → optional bridge (direct LAN MQTT) → display MQTT → panel
 ```
 
 The panel polls FilaMan Display API schema v3 every 10 seconds (20 seconds after an error), with `Authorization: ApiKey <key>` and `If-None-Match`.
 
-MQTT is the fallback path. It starts only when the FilaMan URL or key is empty, or the Display API fails twice in a row. The panel then subscribes to `<topic prefix>/#` (default `display/amsview`). The optional publisher in [`bridge/`](bridge/) can fill those topics from Bambuddy. Leave it stopped while the Display API is reachable.
+MQTT is the fallback path. It starts only when the FilaMan URL or key is empty, or the Display API fails twice in a row. The panel then subscribes to `<topic prefix>/#` (default `display/amsview`). The optional publisher in [`bridge/`](bridge/) can fill those topics from Bambuddy, or connect directly to one Bambu printer and read its attached AMS units. Leave it stopped while the FilaMan Display API is reachable.
+
+For direct mode, set `DATA_SOURCE=direct`, `DIRECT_PRINTER_HOST`, `DIRECT_PRINTER_SERIAL`, and `DIRECT_PRINTER_ACCESS_CODE` in `bridge/.env`. The printer must have LAN Only mode enabled. Direct mode provides printer and AMS telemetry, but it has no inventory or queue: third-party spools may lack remaining weight, cost, brand, and color names. Developer Mode is needed only if MQTT controls such as pause or chamber light are used.
 
 ## Build from source
 
@@ -182,7 +185,7 @@ More detail, including how to add a board: [firmware/FLASHING.md](firmware/FLASH
 |---|---|
 | `docs/` | GitHub Pages web flasher and firmware binaries |
 | `firmware/` | ESP32-S3 firmware for both boards |
-| `bridge/` | Optional Bambuddy → MQTT publisher |
+| `bridge/` | Optional Bambuddy/direct-printer → MQTT publisher |
 | `firmware/FLASHING.md` | Flash matrix, GitHub update files, publish checklist |
 
 > [!NOTE]
