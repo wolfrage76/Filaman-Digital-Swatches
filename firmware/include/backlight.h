@@ -2,7 +2,8 @@
 
 #include <Arduino.h>
 
-// Dim and off are minutes from the last touch. A tap while dim or off restores
+// Dim and off are minutes from the last touch. Off may be kDisplayOffNever,
+// which dims and leaves the backlight on. A tap while dim or off restores
 // full brightness and is not delivered to LVGL. Hardware PWM vs soft-dim is
 // decided by BOARD_BACKLIGHT_PWM in the board panel driver.
 

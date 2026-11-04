@@ -772,6 +772,8 @@ void handleRoot() {
     static constexpr const char *kDimLbls[] = {"10%", "20%", "35%"};
     static constexpr int kTimeoutVals[] = {5, 10, 15, 30};
     static constexpr const char *kTimeoutLbls[] = {"5m", "10m", "15m", "30m"};
+    static constexpr int kOffTimeoutVals[] = {5, 10, 15, 30, kDisplayOffNever};
+    static constexpr const char *kOffTimeoutLbls[] = {"5m", "10m", "15m", "30m", "Never"};
     static constexpr int kIdleVals[] = {0, 60, 180};
     static constexpr const char *kIdleLbls[] = {"Off", "1 min", "3 min"};
     static constexpr int kLowVals[] = {20, 30, 40};
@@ -783,11 +785,11 @@ void handleRoot() {
     h += choiceField("Dimmed", "After idle, before the screen turns off", "brtDim", kDimVals,
                      kDimLbls, 3, c.displayDimBrightPct);
     h += "</div><div class='group'><p class='subhead'>Sleep timers</p>"
-         "<p class='group-lead'>Dim first, then blank the panel to save the backlight.</p>";
+         "<p class='group-lead'>Dim first, then blank the panel, or leave it dimmed.</p>";
     h += choiceField("Dim after", "Time idle before soft-dim", "dimMin", kTimeoutVals,
                      kTimeoutLbls, 4, c.displayDimMin);
-    h += choiceField("Turn off after", "Must be longer than dim", "offMin", kTimeoutVals,
-                     kTimeoutLbls, 4, c.displayOffMin);
+    h += choiceField("Turn off after", "Longer than dim, or never", "offMin", kOffTimeoutVals,
+                     kOffTimeoutLbls, 5, c.displayOffMin);
     h += "</div></div><div class='split-2 after-split'><div class='group'>"
          "<p class='subhead'>Navigation</p>"
          "<p class='group-lead'>Return to AMS View when you walk away from other screens.</p>";
@@ -879,14 +881,14 @@ const TO=[5,10,15,30];
 function syncTimers(e){
  const pick=n=>document.querySelector('input[name='+n+']:checked');
  const d=pick('dimMin'),o=pick('offMin');
- if(d&&o&&+d.value>=+o.value){
+ if(d&&o&&+o.value!==0&&+d.value>=+o.value){
   if(e&&e.target.name==='offMin'){const v=TO.filter(x=>x<+o.value).pop();
    document.querySelector('input[name=dimMin][value="'+v+'"]').checked=true;}
   else{const v=TO.find(x=>x>+d.value);
-   document.querySelector('input[name=offMin][value="'+v+'"]').checked=true;}
+   document.querySelector('input[name=offMin][value="'+(v==null?0:v)+'"]').checked=true;}
  }
- document.querySelectorAll('input[name=dimMin]').forEach(i=>i.disabled=+i.value>=TO[TO.length-1]);
- document.querySelectorAll('input[name=offMin]').forEach(i=>i.disabled=+i.value<=TO[0]);
+ document.querySelectorAll('input[name=dimMin]').forEach(i=>i.disabled=false);
+ document.querySelectorAll('input[name=offMin]').forEach(i=>i.disabled=+i.value!==0&&+i.value<=TO[0]);
 }
 document.querySelectorAll('input[name=dimMin],input[name=offMin]').forEach(i=>i.addEventListener('change',syncTimers));
 syncTimers();

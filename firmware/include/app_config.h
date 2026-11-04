@@ -4,6 +4,9 @@
 
 #include "config.h"
 
+// displayOffMin value: dim on the idle timer and leave the backlight on.
+constexpr int kDisplayOffNever = 0;
+
 // Runtime configuration, persisted in NVS (Preferences namespace "cfg"). Each
 // field defaults to its compile-time macro (config.h / secrets.h) on first boot,
 // so an unprovisioned device behaves exactly as before. Once saved from the
@@ -24,8 +27,8 @@ struct AppConfig {
   String otaHostname;
   bool mdnsEnabled = true;  // answer to <hostname>.local (mDNS)
   String otaPassword;
-  int displayDimMin = 5;
-  int displayOffMin = 15;
+  int displayDimMin = 5;       // 5, 10, 15, 30
+  int displayOffMin = 15;      // 5, 10, 15, 30, or kDisplayOffNever
   int displayFullBrightPct = 100;   // 50, 75, 100
   int displayDimBrightPct = 20;     // 10, 20, 35
   int spoolLowPct = SPOOL_LOW_PERCENT;        // 20, 30, 40
@@ -43,7 +46,7 @@ struct AppConfig {
   void setWifi(const String &ssid, const String &pass);  // set + persist just WiFi
   void setFilamanPrinterId(int id);  // remember the on-screen printer choice
   void setFilamanBaseUrl(const String &url);  // persist a URL that actually answered
-  void setDisplayTimeouts(int dimMin, int offMin);  // minutes; dim must be shorter than off
+  void setDisplayTimeouts(int dimMin, int offMin);  // minutes; dim shorter than off, or off never
   void setDisplayBrightness(int fullPct, int dimPct);
   void setSpoolThresholds(int lowPct, int critPct);
   void setIdleReturnSec(int sec);

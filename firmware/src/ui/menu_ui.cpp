@@ -917,6 +917,7 @@ void showMqtt() {
 }
 
 constexpr int kTimeoutChoices[] = {5, 10, 15, 30};
+constexpr int kOffTimeoutChoices[] = {5, 10, 15, 30, kDisplayOffNever};
 
 int longerTimeout(int minutes) {
   for (int choice : kTimeoutChoices) {
@@ -924,7 +925,7 @@ int longerTimeout(int minutes) {
       return choice;
     }
   }
-  return 0;
+  return kDisplayOffNever;
 }
 
 int shorterTimeout(int minutes) {
@@ -983,10 +984,11 @@ int currentValForKind(ChoiceKind kind) {
 
 bool choiceAllowed(ChoiceKind kind, int value) {
   if (kind == CK_DIM_MIN) {
-    return longerTimeout(value) > 0;
+    // Never is always a valid longer off time, so every dim preset can be picked.
+    return true;
   }
   if (kind == CK_OFF_MIN) {
-    return shorterTimeout(value) > 0;
+    return value == kDisplayOffNever || shorterTimeout(value) > 0;
   }
   return true;
 }
@@ -1054,7 +1056,7 @@ void onChoicePicked(lv_event_t *event) {
       break;
     case CK_DIM_MIN: {
       int off = config().displayOffMin;
-      if (off <= value) {
+      if (off != kDisplayOffNever && off <= value) {
         off = longerTimeout(value);
       }
       config().setDisplayTimeouts(value, off);
@@ -1062,7 +1064,7 @@ void onChoicePicked(lv_event_t *event) {
     }
     case CK_OFF_MIN: {
       int dim = config().displayDimMin;
-      if (dim >= value) {
+      if (value != kDisplayOffNever && dim >= value) {
         dim = shorterTimeout(value);
       }
       config().setDisplayTimeouts(dim, value);
@@ -1126,16 +1128,21 @@ void addTimeoutRow(lv_obj_t *parent, const char *caption, const char *hint, bool
   lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
 
   ChoiceKind kind = dimRow ? CK_DIM_MIN : CK_OFF_MIN;
+  const int *choices = dimRow ? kTimeoutChoices : kOffTimeoutChoices;
+  const int choiceCount =
+      dimRow ? static_cast<int>(sizeof(kTimeoutChoices) / sizeof(kTimeoutChoices[0]))
+             : static_cast<int>(sizeof(kOffTimeoutChoices) / sizeof(kOffTimeoutChoices[0]));
   ChoiceRowCtx *ctx = nullptr;
   if (choiceCtxUsed < static_cast<int>(sizeof(choiceCtx) / sizeof(choiceCtx[0]))) {
     ctx = &choiceCtx[choiceCtxUsed++];
-    ctx->values = kTimeoutChoices;
-    ctx->count = static_cast<int>(sizeof(kTimeoutChoices) / sizeof(kTimeoutChoices[0]));
+    ctx->values = choices;
+    ctx->count = choiceCount;
     ctx->kind = kind;
     lv_obj_set_user_data(row, ctx);
   }
 
-  for (int minutes : kTimeoutChoices) {
+  for (int i = 0; i < choiceCount; ++i) {
+    const int minutes = choices[i];
     lv_obj_t *btn = lv_btn_create(row);
     lv_obj_set_flex_grow(btn, 1);
     lv_obj_set_height(btn, 42);
@@ -1145,7 +1152,11 @@ void addTimeoutRow(lv_obj_t *parent, const char *caption, const char *hint, bool
                         reinterpret_cast<void *>(static_cast<intptr_t>(minutes)));
     lv_obj_t *lbl = lv_label_create(btn);
     lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, 0);
-    lv_label_set_text(lbl, (String(minutes) + "m").c_str());
+    if (minutes == kDisplayOffNever) {
+      lv_label_set_text(lbl, "Never");
+    } else {
+      lv_label_set_text(lbl, (String(minutes) + "m").c_str());
+    }
     lv_obj_center(lbl);
   }
   restyleChoiceRow(row);
@@ -1210,9 +1221,9 @@ void showDisplay() {
                CK_DIM_BRIGHT);
 
   lv_obj_t *cardSleep = makeCard(col);
-  addCardHeader(cardSleep, "Sleep timers", "Dim first, then blank the panel to save the backlight.");
+  addCardHeader(cardSleep, "Sleep timers", "Dim first, then blank the panel, or leave it dimmed.");
   addTimeoutRow(cardSleep, "Dim after", "Time idle before soft-dim", true);
-  addTimeoutRow(cardSleep, "Turn off after", "Must be longer than dim", false);
+  addTimeoutRow(cardSleep, "Turn off after", "Longer than dim, or never", false);
 
   lv_obj_t *cardNav = makeCard(col);
   addCardHeader(cardNav, "Navigation", "Return to AMS View when you walk away from other screens.");

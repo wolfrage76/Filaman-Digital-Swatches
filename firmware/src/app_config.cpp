@@ -35,32 +35,32 @@ bool timeoutChoice(int minutes) {
   return false;
 }
 
+bool offTimeoutChoice(int minutes) {
+  return minutes == kDisplayOffNever || timeoutChoice(minutes);
+}
+
+// The next finite timeout, or Never when minutes is already the longest dim.
 int nextLongerTimeout(int minutes) {
   for (int choice : kTimeoutChoices) {
     if (choice > minutes) {
       return choice;
     }
   }
-  return 0;
+  return kDisplayOffNever;
 }
 
 void normalizeDisplayTimeouts(int &dimMin, int &offMin) {
   if (!timeoutChoice(dimMin)) {
     dimMin = 5;
   }
-  if (!timeoutChoice(offMin)) {
+  if (!offTimeoutChoice(offMin)) {
     offMin = 15;
   }
-  if (dimMin < offMin) {
+  // Never is longer than every dim preset, including 30 minutes.
+  if (offMin == kDisplayOffNever || dimMin < offMin) {
     return;
   }
-  const int longer = nextLongerTimeout(dimMin);
-  if (longer > 0) {
-    offMin = longer;
-    return;
-  }
-  dimMin = 15;
-  offMin = 30;
+  offMin = nextLongerTimeout(dimMin);
 }
 
 void normalizeBrightness(int &fullPct, int &dimPct) {

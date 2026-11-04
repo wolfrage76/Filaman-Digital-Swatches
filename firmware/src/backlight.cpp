@@ -75,11 +75,16 @@ void backlight_loop() {
     return;
   }
   const unsigned long idle = millis() - lastActivityMs;
-  const unsigned long offMs = static_cast<unsigned long>(config().displayOffMin) * 60000UL;
   const unsigned long dimMs = static_cast<unsigned long>(config().displayDimMin) * 60000UL;
-  if (idle >= offMs) {
-    setLevel(Level::Off);
-  } else if (idle >= dimMs) {
+  const int offMin = config().displayOffMin;
+  if (offMin != kDisplayOffNever) {
+    const unsigned long offMs = static_cast<unsigned long>(offMin) * 60000UL;
+    if (idle >= offMs) {
+      setLevel(Level::Off);
+      return;
+    }
+  }
+  if (idle >= dimMs) {
     setLevel(Level::Dim);
   } else {
     setLevel(Level::Full);
