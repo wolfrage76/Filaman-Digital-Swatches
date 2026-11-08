@@ -838,13 +838,20 @@ e.textContent=t?new Date(t*1000).toLocaleString():'Waiting for network time';})(
 gh('/releases/tags/v'+INST).then(d=>{$('fwch').textContent=d.prerelease?'Pre-release':'Release';
 $('fwrel').textContent=day(d.published_at);notes('fwnb','fwn','Release notes',d.body||'');})
 .catch(s=>{$('fwch').textContent=s===404?'Local build':'Unknown';$('fwrel').textContent='-';});
-(BETA?gh('/releases?per_page=5').then(l=>l.filter(r=>!r.draft)
-.reduce((a,r)=>!a||cmp(r.tag_name,a.tag_name)>0?r:a,null)||Promise.reject(404))
-:gh('/releases/latest')).then(d=>{const l=$('ghlat');l.textContent=d.tag_name;
+function showLatest(d){const l=$('ghlat');l.textContent=d.tag_name;
 const newer=cmp(d.tag_name,INST)>0;l.classList.toggle('new',newer);
 $('ghrel').textContent=day(d.published_at);
-if(newer)notes('ghnb','ghn',"What's new",d.body||'');})
-.catch(()=>{$('ghrel').textContent='-';});
+if(newer)notes('ghnb','ghn',"What's new",d.body||'');}
+const stableP=gh('/releases/latest').catch(()=>null);
+const tagsP=BETA?gh('/tags?per_page=30').catch(()=>null):Promise.resolve(null);
+Promise.all([stableP,tagsP]).then(([s,tags])=>{
+ let best=null;
+ if(Array.isArray(tags))for(const t of tags){const n=t.name||'';
+  if(n.indexOf('-')<0)continue;if(!best||cmp(n,best)>0)best=n;}
+ if(best&&(!s||cmp(best,s.tag_name)>0))
+  return gh('/releases/tags/'+best).then(b=>b&&b.prerelease&&!b.draft?b:s).catch(()=>s);
+ return s;
+}).then(d=>{if(!d)throw 0;showLatest(d);}).catch(()=>{$('ghrel').textContent='-';});
 document.querySelectorAll('a[href^="#panel-"]').forEach(a=>{
  a.addEventListener('click',e=>{
   const id=a.getAttribute('href').slice(1);

@@ -8,7 +8,6 @@
 #include <Preferences.h>
 #include <WiFiClientSecure.h>
 #include <time.h>
-#include <esp_heap_caps.h>
 #include <esp_ota_ops.h>
 #include <esp_system.h>
 
@@ -38,16 +37,19 @@ bool sawWifiConnected = false;
 // unauthenticated 60/hr GitHub limit even with a few panels on one IP.
 constexpr unsigned long kAutoCheckFirstDelayMs = 90UL * 1000UL;
 constexpr unsigned long kAutoCheckIntervalMs = 60UL * 60UL * 1000UL;
-// Connection attempts for GitHub downloads (only when the connect itself fails).
+// Attempts for a GitHub request. Connect failures and HTTP 502/503/504 are retried.
 constexpr int kConnectAttempts = 3;
 constexpr unsigned long kConnectRetryDelayMs = 1500;
 
 // releases/latest never returns a pre-release, so stable panels can't see betas.
 constexpr const char *kReleasesApiUrl =
     "https://api.github.com/repos/" PROJECT_GITHUB_REPO "/releases/latest";
-// Newest releases first, pre-releases included. Only read on the beta channel.
-constexpr const char *kReleasesListUrl =
-    "https://api.github.com/repos/" PROJECT_GITHUB_REPO "/releases?per_page=5";
+// Tag names only. The full releases list is large and GitHub often answers it
+// with HTTP 503, which made every beta check fail even when stable was fine.
+constexpr const char *kTagsApiUrl =
+    "https://api.github.com/repos/" PROJECT_GITHUB_REPO "/tags?per_page=30";
+constexpr const char *kReleaseTagApiPrefix =
+    "https://api.github.com/repos/" PROJECT_GITHUB_REPO "/releases/tags/";
 constexpr const char *kPagesBase =
     "https://wolfrage76.github.io/Filaman-Digital-Swatches/";
 // Shared version stamp (always published). Board-specific manifests may lag.
@@ -173,104 +175,124 @@ int comparePrereleaseTags(const String &a, const String &b) {
   return 0;
 }
 
-// Newest GitHub pre-release that carries this board's app image. The list
-// response is large (~50 KB of notes and asset metadata), so it is read into
-// PSRAM first and filtered while parsing. Parsing straight off the TLS stream
-// gave up on short network stalls.
-bool fetchNewestPrerelease(String &versionOut, String &urlOut, String &errorOut) {
-  versionOut = "";
-  urlOut = "";
-  WiFiClientSecure secure;
-  secure.setInsecure();
-  HTTPClient http;
-  http.setTimeout(10000);
-  http.setReuse(false);
-  http.useHTTP10(true);  // no chunked encoding, so the stream is plain JSON
-  http.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
-  // A negative code means the connection never opened (DNS, TCP or TLS); on a
-  // laggy Wi-Fi link that is often transient, so try a few times.
-  int code = -1;
-  for (int attempt = 0; attempt < kConnectAttempts && code < 0; ++attempt) {
+// HTTP status, or 0 when the connection never opened. Body is set only on 200.
+// Connect failures and 502/503/504 are retried; those are the usual GitHub
+// hiccups on a laggy link.
+int githubGet(const String &url, String &bodyOut) {
+  bodyOut = "";
+  int code = 0;
+  for (int attempt = 0; attempt < kConnectAttempts; ++attempt) {
     if (attempt > 0) {
-      http.end();
       delay(kConnectRetryDelayMs);
     }
-    if (!http.begin(secure, kReleasesListUrl)) {
-      errorOut = "GitHub connection failed";
-      return false;
+    WiFiClientSecure secure;
+    secure.setInsecure();
+    HTTPClient http;
+    http.setTimeout(10000);
+    http.setReuse(false);
+    http.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
+    if (!http.begin(secure, url)) {
+      code = 0;
+      continue;
     }
     http.addHeader("User-Agent", String("DigitalSwatchSystem/") + BOARD_ID);
     http.addHeader("Accept", "application/vnd.github+json");
     code = http.GET();
-  }
-  if (code != 200) {
+    if (code == 200) {
+      bodyOut = http.getString();
+      http.end();
+      return 200;
+    }
     drainHttp(http);
     http.end();
-    errorOut = String("GitHub HTTP ") + code;
-    return false;
-  }
-  constexpr size_t kMaxBody = 160 * 1024;
-  char *body = static_cast<char *>(heap_caps_malloc(kMaxBody, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
-  if (!body) {
-    drainHttp(http);
-    http.end();
-    errorOut = "No memory for GitHub release list";
-    return false;
-  }
-  size_t len = 0;
-  WiFiClient *stream = http.getStreamPtr();
-  const unsigned long deadline = millis() + 20000;
-  while (stream && len < kMaxBody && millis() < deadline) {
-    const int avail = stream->available();
-    if (avail > 0) {
-      const size_t want = min(static_cast<size_t>(avail), kMaxBody - len);
-      const int n = stream->readBytes(body + len, want);
-      if (n > 0) {
-        len += n;
-      }
-    } else if (!stream->connected()) {
-      break;  // HTTP/1.0: the server closes the connection after the body
-    } else {
-      delay(5);
+    if (code > 0 && code != 502 && code != 503 && code != 504) {
+      return code;
     }
   }
-  http.end();
+  return code;
+}
 
-  JsonDocument filter;
-  filter[0]["tag_name"] = true;
-  filter[0]["prerelease"] = true;
-  filter[0]["draft"] = true;
-  filter[0]["assets"][0]["name"] = true;
-  filter[0]["assets"][0]["browser_download_url"] = true;
-  JsonDocument doc;
-  const DeserializationError err =
-      deserializeJson(doc, static_cast<const char *>(body), len,
-                     DeserializationOption::Filter(filter));
-  heap_caps_free(body);
-  if (err) {
-    errorOut = String("GitHub release list ") + err.c_str() + " (" + len + " bytes)";
+void githubHttpError(int code, String &errorOut) {
+  errorOut = code <= 0 ? String("GitHub connection failed") : String("GitHub HTTP ") + code;
+}
+
+// Newest pre-release newer than `thanVersion` that carries this board's image.
+// An empty `thanVersion` accepts any pre-release. Returns false with an empty
+// error when no newer beta exists — the caller keeps the stable release.
+bool fetchNewerPrerelease(const String &thanVersion, String &versionOut, String &urlOut,
+                          String &errorOut) {
+  versionOut = "";
+  urlOut = "";
+  errorOut = "";
+  String body;
+  const int tagsCode = githubGet(kTagsApiUrl, body);
+  if (tagsCode != 200) {
+    githubHttpError(tagsCode, errorOut);
     return false;
   }
-  for (JsonObject rel : doc.as<JsonArray>()) {
-    if (!(rel["prerelease"] | false) || (rel["draft"] | false)) {
+  JsonDocument tagFilter;
+  tagFilter[0]["name"] = true;
+  JsonDocument tags;
+  if (deserializeJson(tags, body, DeserializationOption::Filter(tagFilter))) {
+    errorOut = "GitHub tags JSON parse failed";
+    return false;
+  }
+  String bestRaw;
+  String bestVer;
+  for (JsonObject tag : tags.as<JsonArray>()) {
+    const String raw = tag["name"] | "";
+    const String ver = cleanVersion(raw);
+    if (!ver.length() || !prereleaseTag(ver).length()) {
       continue;
     }
-    const String ver = cleanVersion(rel["tag_name"] | "");
-    if (!ver.length() ||
-        (versionOut.length() && ota_compare_versions(ver, versionOut) <= 0)) {
+    if (thanVersion.length() && ota_compare_versions(ver, thanVersion) <= 0) {
       continue;
     }
-    for (JsonObject asset : rel["assets"].as<JsonArray>()) {
-      const String name = asset["name"] | "";
-      const String url = asset["browser_download_url"] | "";
-      if (url.length() && name == BOARD_OTA_ASSET) {
-        versionOut = ver;
-        urlOut = url;
-        break;
-      }
+    if (bestVer.length() && ota_compare_versions(ver, bestVer) <= 0) {
+      continue;
+    }
+    bestRaw = raw;
+    bestVer = ver;
+  }
+  if (!bestVer.length()) {
+    return false;
+  }
+
+  body = "";
+  const int relCode = githubGet(String(kReleaseTagApiPrefix) + bestRaw, body);
+  if (relCode == 404) {
+    return false;  // tag exists, but it was never published as a release
+  }
+  if (relCode != 200) {
+    githubHttpError(relCode, errorOut);
+    return false;
+  }
+  JsonDocument relFilter;
+  relFilter["tag_name"] = true;
+  relFilter["prerelease"] = true;
+  relFilter["draft"] = true;
+  relFilter["assets"][0]["name"] = true;
+  relFilter["assets"][0]["browser_download_url"] = true;
+  JsonDocument rel;
+  if (deserializeJson(rel, body, DeserializationOption::Filter(relFilter))) {
+    errorOut = "GitHub release JSON parse failed";
+    return false;
+  }
+  if (!(rel["prerelease"] | false) || (rel["draft"] | false)) {
+    return false;
+  }
+  const String ver = cleanVersion(rel["tag_name"] | bestVer);
+  for (JsonObject asset : rel["assets"].as<JsonArray>()) {
+    const String name = asset["name"] | "";
+    const String url = asset["browser_download_url"] | "";
+    if (url.length() && name == BOARD_OTA_ASSET) {
+      versionOut = ver;
+      urlOut = url;
+      return true;
     }
   }
-  return versionOut.length() > 0;
+  device_logf("Beta v%s has no %s", ver.c_str(), BOARD_OTA_ASSET);
+  return false;
 }
 
 // GitHub release assets answer with a redirect to a signed URL on another
@@ -450,20 +472,19 @@ bool ota_check_github_update(String &latestVersionOut, String &downloadUrlOut, S
     }
   }
 
-  // 3. Beta channel: a newer pre-release wins over the stable version. Once
-  // the matching release ships it is newer again, so testers rejoin stable.
+  // 3. Beta channel: a newer pre-release wins. No newer beta leaves the stable
+  // result alone, including when the beta lookup itself fails.
   if (config().betaUpdates) {
     String betaVer, betaUrl, betaErr;
-    if (fetchNewestPrerelease(betaVer, betaUrl, betaErr)) {
-      if (!latestVersionOut.length() || ota_compare_versions(betaVer, latestVersionOut) > 0) {
-        latestVersionOut = betaVer;
-        downloadUrlOut = betaUrl;
-      }
+    if (fetchNewerPrerelease(latestVersionOut, betaVer, betaUrl, betaErr)) {
+      latestVersionOut = betaVer;
+      downloadUrlOut = betaUrl;
       errorOut = "";
     } else if (betaErr.length() && !latestVersionOut.length()) {
       errorOut = betaErr;
     } else if (betaErr.length()) {
-      device_logf("Beta check: %s", betaErr.c_str());
+      device_logf("Beta check failed (%s); using stable v%s", betaErr.c_str(),
+                  latestVersionOut.c_str());
     }
   }
 
