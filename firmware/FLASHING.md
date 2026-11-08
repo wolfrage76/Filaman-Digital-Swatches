@@ -1,25 +1,25 @@
 # Flashing Digital Swatch System
 
-How to flash, update, and publish firmware for both supported boards, and how to add a new one. For first-time setup, see the [main README](../README.md).
+How to flash, update, and publish firmware for the supported boards (CrowPanel 7″, Waveshare ESP32-S3-Touch-LCD-7, and Guition JC4880P443C 4.3″), and how to add a new one. For first-time setup, see the [main README](../README.md).
 
 The firmware version lives in `include/config.h` (`FIRMWARE_VERSION`). `build_factory.sh` copies it into every published manifest.
 
 > [!CAUTION]
-> CrowPanel and Waveshare share the UI but use different images. Do not cross-flash. The running firmware rejects an image whose embedded board id does not match.
+> CrowPanel, Waveshare, and Guition share the UI but use different images. Do not cross-flash. The running firmware rejects an image whose embedded board id does not match. The Guition image is built from source; it is not on the web flasher.
 
 ## Board matrix
 
-| | CrowPanel 7″ | Waveshare ESP32-S3-Touch-LCD-7 |
-|---|---|---|
-| PlatformIO env | `crowpanel_7_idf` | `waveshare-s3-lcd7` |
-| OTA env | `crowpanel_7_idf_ota` | `waveshare-s3-lcd7_ota` |
-| Flash | 4 MB | 16 MB |
-| USB | CH340. Install the driver if the browser shows no port. | Native USB. Hold **BOOT**, tap **RESET**, release **BOOT** if the port is missing. |
-| Default hostname | `crowpanel-xxxx.local` | `waveshare-xxxx.local` |
-| Keep-settings manifest | `docs/manifest-update.json` | `docs/manifest-update-waveshare-s3-lcd7.json` |
-| Factory manifest | `docs/manifest-factory.json` | `docs/manifest-waveshare-s3-lcd7.json` |
-| App image | `firmware-crowpanel-s3-lcd7.bin` | `firmware-waveshare-s3-lcd7.bin` |
-| GitHub update download | `firmware.bin` (same bytes as the CrowPanel app) | `firmware-waveshare-s3-lcd7.bin` |
+| | CrowPanel 7″ | Waveshare ESP32-S3-Touch-LCD-7 | Guition JC4880P443C 4.3″ |
+|---|---|---|---|
+| PlatformIO env | `crowpanel_7_idf` | `waveshare-s3-lcd7` | `guition-jc4880p443` |
+| OTA env | `crowpanel_7_idf_ota` | `waveshare-s3-lcd7_ota` | `guition-jc4880p443_ota` |
+| Flash | 4 MB | 16 MB | 16 MB |
+| USB | CH340. Install the driver if the browser shows no port. | Native USB. Hold **BOOT**, tap **RESET**, release **BOOT** if the port is missing. | USB-Serial/JTAG on the P4. |
+| Default hostname | `crowpanel-xxxx.local` | `waveshare-xxxx.local` | `guition-xxxx.local` |
+| Keep-settings manifest | `docs/manifest-update.json` | `docs/manifest-update-waveshare-s3-lcd7.json` | not published |
+| Factory manifest | `docs/manifest-factory.json` | `docs/manifest-waveshare-s3-lcd7.json` | not published |
+| App image | `firmware-crowpanel-s3-lcd7.bin` | `firmware-waveshare-s3-lcd7.bin` | `firmware-guition-jc4880p443.bin` |
+| GitHub update download | `firmware.bin` (same bytes as the CrowPanel app) | `firmware-waveshare-s3-lcd7.bin` | local / OTA upload only |
 
 `xxxx` is the last four hex digits of the panel's Wi‑Fi MAC address. **≡ → System** shows it.
 
@@ -49,7 +49,10 @@ python3 -m venv .venv
 cd firmware
 ../.venv/bin/pio run -e crowpanel_7_idf -t upload
 ../.venv/bin/pio run -e waveshare-s3-lcd7 -t upload
+../.venv/bin/pio run -e guition-jc4880p443 -t upload
 ```
+
+The Guition target is an ESP32-P4 rev 3 (`esp32-p4_r3` on pioarduino 55.03.36-1). Flash it at 115200 baud; the USB-Serial/JTAG stub faults if the baud rate changes. The 480×800 glass is rotated 270° into the shared 800×480 UI. Wi-Fi is the onboard ESP32-C6 on SDIO (CLK 18, CMD 19, D0–D3 14–17, reset 54). Update that co-processor to **2.9.6** before relying on Wi-Fi. See [Advanced: update the Guition ESP32-C6](#advanced-update-the-guition-esp32-c6).
 
 ### Wireless (OTA)
 
@@ -67,6 +70,9 @@ OTA_PASSWORD=yourpass ../.venv/bin/pio run -e crowpanel_7_idf_ota -t upload \
 
 OTA_PASSWORD=yourpass ../.venv/bin/pio run -e waveshare-s3-lcd7_ota -t upload \
   --upload-port waveshare-xxxx.local
+
+OTA_PASSWORD=yourpass ../.venv/bin/pio run -e guition-jc4880p443_ota -t upload \
+  --upload-port guition-xxxx.local
 ```
 
 > [!WARNING]
@@ -85,7 +91,7 @@ cd firmware
 ./webflasher/build_factory.sh
 ```
 
-This builds both boards and writes their factory, app, bootloader and partition images to `docs/firmware/`. It copies the CrowPanel set to the unsuffixed names (`firmware.bin`, `factory.bin`, …) and stamps the version into all five manifests under `docs/`.
+This builds the CrowPanel and Waveshare images and writes their factory, app, bootloader and partition images to `docs/firmware/`. It copies the CrowPanel set to the unsuffixed names (`firmware.bin`, `factory.bin`, …) and stamps the version into all five manifests under `docs/`. The Guition board is supported from source and is not part of this publish step.
 
 > [!IMPORTANT]
 > The script refuses to run while `include/secrets.h` exists, because the factory image would embed its defaults. Move the file aside for the build:
@@ -121,6 +127,75 @@ Panels see a beta only when **Include beta releases** is on, either on the panel
 > [!NOTE]
 > `build_factory.sh` refuses to run while `FIRMWARE_VERSION` has a pre-release suffix, and `build_beta.sh` refuses a stable version. Set the stable number before you publish to the web flasher.
 
+## Advanced: update the Guition ESP32-C6
+
+The P4 has no radio. Wi-Fi is an ESP32-C6 running ESP-Hosted slave firmware, and this tree's host is **2.9.6** (Arduino-esp32 3.3.6). A factory C6 answers the version RPC with `Slave firmware version: 0.0.0` (`rpc_core: Response not received`). That mismatch drops associations and can freeze the glass while SDIO retries. Display and touch do not need the C6 update. Do this once per panel, before you depend on Wi-Fi.
+
+A healthy boot log contains:
+
+```text
+Host firmware version: 2.9.6
+Slave firmware version: 2.9.6
+Versions Match!
+C6: radio firmware matches host
+```
+
+Digital Swatch will download a newer slave over HTTPS after it joins **only** when the C6 reports a real older version. It skips `0.0.0`, because starting hosted OTA against that slave panics the SDIO driver. Use one of the two procedures below for a factory radio. The image you want is the Arduino slave build, not an ESPHome 2.12 image:
+
+`https://espressif.github.io/arduino-esp32/hosted/esp32c6-v2.9.6.bin`
+
+The C6 keeps that image in its own flash across later P4 updates.
+
+### Over SDIO, no extra wires
+
+`firmware/c6_ota` is a one-shot P4 app. It embeds the 2.9.6 slave image and writes it over SDIO **without starting Wi-Fi**. It replaces Digital Swatch on the P4 until you flash that image back. NVS (Wi-Fi, FilaMan) is left in place as long as the full chip is not erased.
+
+```bash
+cd firmware/c6_ota
+../../.venv/bin/pio run -t upload
+../../.venv/bin/pio device monitor -b 115200
+```
+
+Wait for `PASS: C6 radio firmware written`. `FAIL` means stop and use the UART procedure. Then restore the panel from `firmware/`:
+
+```bash
+cd ..
+../.venv/bin/pio run -e guition-jc4880p443 -t upload
+```
+
+Upload speed stays **115200**. The P4 USB-Serial/JTAG stub faults if esptool switches baud. On Linux the P4 is `/dev/ttyACM*`.
+
+### Over the C6 UART
+
+Use this when the SDIO helper fails. Wire a 3.3 V USB-TTL adapter to Expand-IO header **JP1**. Do not connect the adapter's 3.3 V pin.
+
+| Adapter | JP1 |
+|---|---|
+| TX | `C6_U0RXD` |
+| RX | `C6_U0TXD` |
+| GND | `GND` |
+
+If the adapter has no DTR/RTS reset wiring, hold **`C6_IO9` (BOOT)** low and pulse **`C6_CHIP_PU`**. Halt the P4 before the long write. A running Digital Swatch image resets the C6 through GPIO 54, and the chip stops responding mid-flash.
+
+```bash
+cd firmware
+../.venv/bin/python -m esptool --chip esp32p4 --port /dev/ttyACM0 \
+  --before default_reset --after no_reset flash_id
+
+curl -LO https://espressif.github.io/arduino-esp32/hosted/esp32c6-v2.9.6.bin
+
+# /dev/ttyUSB0 is the USB-TTL, not the P4.
+../.venv/bin/python -m esptool --chip esp32c6 --port /dev/ttyUSB0 --baud 115200 \
+  write_flash 0x10000 esp32c6-v2.9.6.bin
+../.venv/bin/python -m esptool --chip esp32c6 --port /dev/ttyUSB0 \
+  erase_region 0xd000 0x2000
+
+../.venv/bin/python -m esptool --chip esp32c6 --port /dev/ttyUSB0 --after hard_reset flash_id
+../.venv/bin/python -m esptool --chip esp32p4 --port /dev/ttyACM0 --after hard_reset flash_id
+```
+
+`write_flash 0x10000` is the C6 `ota_0` slot. Erasing otadata at `0xd000` (8 KB) makes the C6 boot that slot. Boot the P4 again and confirm `Versions Match!`.
+
 ## Add a board
 
 1. Copy the closest folder under `src/boards/` and `include/boards/`.
@@ -138,5 +213,6 @@ Panels see a beta only when **Include beta releases** is on, either on the panel
 |---|---|
 | `crowpanel_7_idf` / `_idf_ota` | Current CrowPanel build |
 | `waveshare-s3-lcd7` / `_ota` | Current Waveshare build |
+| `guition-jc4880p443` / `_ota` | Guition JC4880P443C 4.3″ (ESP32-P4), source install |
 | `crowpanel_7_hmi` / `_ota` | Older CrowPanel build on the Arduino 2.x / IDF 4.4 stack |
 | `crowpanel_7_bounce` / `_bounce_ota` | CrowPanel with bounce buffers, without the full XIP rebuild |

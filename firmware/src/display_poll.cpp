@@ -2,7 +2,10 @@
 
 #include <ArduinoJson.h>
 #include <WiFi.h>
+#include <atomic>
 #include <esp_heap_caps.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 #include <time.h>
 
 #include <new>
@@ -656,18 +659,46 @@ int printerIdForHost(const PrinterOption *printers, int count) {
   return 0;
 }
 
-void refreshPrinterList() {
+enum class FetchKind : uint8_t { None = 0, List = 1, Snapshot = 2 };
+
+struct ListPayload {
+  FmResult result;
   PrinterOption printers[MAX_PRINTER_OPTIONS];
   int count = 0;
-  const int pinned = config().filamanPrinterId;
-  String activeId = pinned > 0 ? String(pinned) : (activePrinterId > 0 ? String(activePrinterId) : "");
-  FmResult r = filaman.listBambuddyPrinters(printers, MAX_PRINTER_OPTIONS, count, activeId);
+  String activeId;
+};
+
+struct SnapPayload {
+  FmResult result;
+  int printerId = 0;
+  uint32_t latencyMs = 0;
+};
+
+ListPayload listPayload;
+SnapPayload snapPayload;
+PsramDoc *snapDoc = nullptr;
+FetchKind requested = FetchKind::None;
+int requestedPrinter = 0;
+String requestedActiveId;
+std::atomic<uint8_t> readyKind{0};
+std::atomic<bool> workerBusy{false};
+TaskHandle_t fetchTask = nullptr;
+
+void applyPrinterList(PrinterOption *printers, int count, String activeId, const FmResult &r) {
   if (!r.ok) {
     snprintf(pollStatus, sizeof(pollStatus), "list: %.80s", r.error.c_str());
     device_logf("display_poll: printer list failed: %s", r.error.c_str());
+    if (activePrinterId <= 0) {
+      ui_set_connection_status("No printer in FilaMan");
+      snprintf(pollStatus, sizeof(pollStatus), "no printer");
+      if (consecutiveFails < 1000) {
+        consecutiveFails++;
+      }
+    }
     return;
   }
 
+  const int pinned = config().filamanPrinterId;
   int chosen = 0;
   if (pinned > 0 && idListed(printers, count, pinned)) {
     chosen = pinned;
@@ -698,25 +729,23 @@ void refreshPrinterList() {
     printers[i].active = (printers[i].id.toInt() == activePrinterId);
   }
   printer_list_set(printers, count, String(activePrinterId > 0 ? activePrinterId : 0));
-}
-
-void pollSnapshot() {
   if (activePrinterId <= 0) {
-    refreshPrinterList();
-    if (activePrinterId <= 0) {
-      ui_set_connection_status("No printer in FilaMan");
-      snprintf(pollStatus, sizeof(pollStatus), "no printer");
-      if (consecutiveFails < 1000) {
-        consecutiveFails++;
-      }
-      return;
+    ui_set_connection_status("No printer in FilaMan");
+    snprintf(pollStatus, sizeof(pollStatus), "no printer");
+    if (consecutiveFails < 1000) {
+      consecutiveFails++;
     }
   }
+}
 
-  PsramDoc doc;
-  const unsigned long t0 = millis();
-  FmResult r = filaman.fetchDisplaySnapshot(activePrinterId, true, doc);
-  lastPollLatencyMs = static_cast<uint32_t>(millis() - t0);
+void applySnapshotResult() {
+  const FmResult &r = snapPayload.result;
+  lastPollLatencyMs = snapPayload.latencyMs;
+  if (activePrinterId > 0 && snapPayload.printerId != activePrinterId) {
+    // The picker changed printers while this response was in flight.
+    lastSnapshotMs = 0;
+    return;
+  }
   if (r.notModified) {
     lastOk = true;
     consecutiveFails = 0;
@@ -726,12 +755,10 @@ void pollSnapshot() {
     return;
   }
   if (!r.ok && r.httpStatus == 404) {
-    const int missing = activePrinterId;
+    device_logf("display_poll: printer %d is gone", snapPayload.printerId);
     activePrinterId = 0;
-    refreshPrinterList();
-    if (activePrinterId > 0 && activePrinterId != missing) {
-      r = filaman.fetchDisplaySnapshot(activePrinterId, true, doc);
-    }
+    lastPrinterListMs = 0;
+    return;
   }
   if (!r.ok) {
     lastOk = false;
@@ -743,7 +770,7 @@ void pollSnapshot() {
     ui_set_connection_status(String("FilaMan: ") + r.error);
     return;
   }
-  if (!applySnapshot(doc)) {
+  if (!snapDoc || !applySnapshot(*snapDoc)) {
     lastOk = false;
     if (consecutiveFails < 1000) {
       consecutiveFails++;
@@ -757,6 +784,91 @@ void pollSnapshot() {
   consecutiveFails = 0;
   snprintf(pollStatus, sizeof(pollStatus), "linked printer %d", activePrinterId);
   ui_set_connection_status("FilaMan linked");
+}
+
+void applyReadyFetch() {
+  const auto kind = static_cast<FetchKind>(readyKind.load(std::memory_order_acquire));
+  if (kind == FetchKind::List) {
+    applyPrinterList(listPayload.printers, listPayload.count, listPayload.activeId, listPayload.result);
+  } else if (kind == FetchKind::Snapshot) {
+    applySnapshotResult();
+  } else {
+    return;
+  }
+  readyKind.store(0, std::memory_order_release);
+}
+
+void filamanFetchBody() {
+  const FetchKind kind = requested;
+  const int printer = requestedPrinter;
+  const String activeId = requestedActiveId;
+  if (kind == FetchKind::List) {
+    listPayload.count = 0;
+    listPayload.activeId = activeId;
+    listPayload.result = filaman.listBambuddyPrinters(listPayload.printers, MAX_PRINTER_OPTIONS,
+                                                      listPayload.count, listPayload.activeId);
+    readyKind.store(static_cast<uint8_t>(FetchKind::List), std::memory_order_release);
+  } else if (kind == FetchKind::Snapshot) {
+    if (!snapDoc) {
+      snapDoc = new (std::nothrow) PsramDoc();
+    }
+    if (snapDoc) {
+      snapDoc->clear();
+    }
+    snapPayload.printerId = printer;
+    const unsigned long t0 = millis();
+    snapPayload.result = snapDoc ? filaman.fetchDisplaySnapshot(printer, true, *snapDoc)
+                                 : FmResult{};
+    if (!snapDoc) {
+      snapPayload.result.error = "out of memory";
+    }
+    snapPayload.latencyMs = static_cast<uint32_t>(millis() - t0);
+    readyKind.store(static_cast<uint8_t>(FetchKind::Snapshot), std::memory_order_release);
+  }
+}
+
+void filamanFetchTask(void *) {
+  for (;;) {
+    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+    if (requested == FetchKind::None) {
+      workerBusy.store(false, std::memory_order_release);
+      continue;
+    }
+    filamanFetchBody();
+    while (readyKind.load(std::memory_order_acquire) != 0) {
+      vTaskDelay(pdMS_TO_TICKS(5));
+    }
+    workerBusy.store(false, std::memory_order_release);
+  }
+}
+
+void ensureFetchTask() {
+  if (fetchTask) {
+    return;
+  }
+  if (xTaskCreatePinnedToCore(filamanFetchTask, "filaman", 16384, nullptr, 1, &fetchTask, 0) != pdPASS) {
+    fetchTask = nullptr;
+    device_log("display_poll: fetch task failed");
+  }
+}
+
+bool startFetch(FetchKind kind) {
+  if (!fetchTask || workerBusy.load(std::memory_order_acquire) ||
+      readyKind.load(std::memory_order_acquire) != 0) {
+    return false;
+  }
+  if (kind == FetchKind::Snapshot) {
+    requestedPrinter = activePrinterId;
+  } else if (kind == FetchKind::List) {
+    const int pinned = config().filamanPrinterId;
+    requestedActiveId = pinned > 0 ? String(pinned) : (activePrinterId > 0 ? String(activePrinterId) : "");
+  } else {
+    return false;
+  }
+  requested = kind;
+  workerBusy.store(true, std::memory_order_release);
+  xTaskNotifyGive(fetchTask);
+  return true;
 }
 
 }  // namespace
@@ -774,6 +886,7 @@ void display_poll_begin() {
     }
   }
   printer_list_set_publisher([](const String &id) { display_poll_set_printer(id); });
+  ensureFetchTask();
 }
 
 bool display_poll_active() { return begun && filaman.configured(); }
@@ -800,6 +913,9 @@ const char *display_poll_status() { return pollStatus; }
 uint32_t display_poll_last_latency_ms() { return lastPollLatencyMs; }
 
 void display_poll_loop() {
+  // A finished response is applied here, on the UI loop. The request itself
+  // runs on the filaman task, so a slow server does not stop drawing.
+  applyReadyFetch();
   if (!display_poll_active() || WiFi.status() != WL_CONNECTED) {
     wifiReadyAtMs = 0;
     return;
@@ -817,12 +933,33 @@ void display_poll_loop() {
   }
   const unsigned long snapshotInterval = lastOk ? POLL_INTERVAL_MS : POLL_FAIL_BACKOFF_MS;
   const unsigned long listInterval = lastOk ? PRINTER_LIST_INTERVAL_MS : POLL_FAIL_BACKOFF_MS;
-  if (now - lastPrinterListMs >= listInterval || lastPrinterListMs == 0) {
-    lastPrinterListMs = now;
-    refreshPrinterList();
+  const bool listDue = lastPrinterListMs == 0 || now - lastPrinterListMs >= listInterval;
+  const bool snapDue = lastSnapshotMs == 0 || now - lastSnapshotMs >= snapshotInterval;
+  FetchKind kind = FetchKind::None;
+  if (listDue) {
+    kind = FetchKind::List;
+  } else if (snapDue && activePrinterId > 0) {
+    kind = FetchKind::Snapshot;
   }
-  if (now - lastSnapshotMs >= snapshotInterval || lastSnapshotMs == 0) {
+  if (kind == FetchKind::None) {
+    return;
+  }
+  if (!fetchTask) {
+    if (kind == FetchKind::Snapshot) {
+      requestedPrinter = activePrinterId;
+    } else {
+      const int pinned = config().filamanPrinterId;
+      requestedActiveId = pinned > 0 ? String(pinned) : (activePrinterId > 0 ? String(activePrinterId) : "");
+    }
+    requested = kind;
+    filamanFetchBody();
+    applyReadyFetch();
+  } else if (!startFetch(kind)) {
+    return;
+  }
+  if (kind == FetchKind::List) {
+    lastPrinterListMs = now;
+  } else {
     lastSnapshotMs = now;
-    pollSnapshot();
   }
 }

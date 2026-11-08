@@ -180,6 +180,10 @@ const uint16_t *panelFramebuffer() { return s_fb; }
 
 void panelStopScanout() { panelStop(); }
 
+void panelPresent() {}
+
+void panelPoll() {}
+
 void panelBlitStrip(int32_t x, int32_t y, int32_t w, int32_t h, const uint16_t *px) {
   if (!s_fb || !px || w <= 0 || h <= 0) {
     return;

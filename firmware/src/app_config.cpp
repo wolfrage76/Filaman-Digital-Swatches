@@ -15,7 +15,16 @@ String defaultHostname() {
   return OTA_HOSTNAME;
 #else
   uint8_t mac[6] = {};
+#if defined(BOARD_GUITION_JC4880)
+  // The P4 has no local Wi-Fi MAC; that address belongs to the C6 co-processor.
+  // esp_read_mac(ESP_MAC_WIFI_STA) aborts until the co-processor is up, and the
+  // hostname is chosen before Wi-Fi starts. The factory address is in eFuse.
+  if (esp_efuse_mac_get_default(mac) == ESP_OK) {
+    esp_base_mac_addr_set(mac);
+  }
+#else
   esp_read_mac(mac, ESP_MAC_WIFI_STA);
+#endif
   char suffix[6];
   snprintf(suffix, sizeof(suffix), "%02x%02x", mac[4], mac[5]);
   return String(BOARD_DEFAULT_HOSTNAME) + "-" + suffix;

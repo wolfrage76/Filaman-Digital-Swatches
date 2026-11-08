@@ -27,6 +27,13 @@ const uint16_t *panelFramebuffer();
 // Copy one finished strip into the framebuffer (cache-coherent as needed).
 void panelBlitStrip(int32_t x, int32_t y, int32_t w, int32_t h, const uint16_t *px);
 
+// The last strip of this LVGL frame is in the framebuffer. Boards that rotate
+// or page-flip present the finished frame here. Direct-scan boards do nothing.
+void panelPresent();
+
+// Once per main-loop turn, outside a flush. Direct-scan boards do nothing.
+void panelPoll();
+
 // Current fingers on the glass, up to max_points. Returns how many.
 uint8_t panelTouchRead(PanelTouchPoint *points, uint8_t max_points);
 

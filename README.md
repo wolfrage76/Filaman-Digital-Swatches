@@ -1,6 +1,6 @@
 # Digital Swatch System
 
-A 7″ touchscreen that shows your Bambu Lab AMS trays as filament swatches, plus live print status, powered by [FilaMan](https://www.filaman.app).
+A touchscreen that shows your Bambu Lab AMS trays as filament swatches, plus live print status, powered by [FilaMan](https://www.filaman.app).
 
 [![Release](https://img.shields.io/github/v/release/wolfrage76/Filaman-Digital-Swatches)](https://github.com/wolfrage76/Filaman-Digital-Swatches/releases)
 [![Web Flasher](https://img.shields.io/badge/install-Web%20Flasher-blue)](https://wolfrage76.github.io/Filaman-Digital-Swatches/)
@@ -16,7 +16,7 @@ A 7″ touchscreen that shows your Bambu Lab AMS trays as filament swatches, plu
 - Printer HMS and low-spool alerts
 - Browser-based install, on-panel setup, and over-the-air updates
 - Web config page with a device log and panel screenshots
-- Runs on two ESP32-S3 boards: Elecrow CrowPanel 7″ and Waveshare ESP32-S3-Touch-LCD-7
+- Runs on the Elecrow CrowPanel 7″, the Waveshare ESP32-S3-Touch-LCD-7, and the Guition JC4880P443C 4.3″
 
 ## Requirements
 
@@ -31,16 +31,17 @@ A 7″ touchscreen that shows your Bambu Lab AMS trays as filament swatches, plu
 
 ## Supported boards
 
-| | Elecrow CrowPanel 7″ | Waveshare ESP32-S3-Touch-LCD-7 |
-|---|---|---|
-| Screen | 800×480 RGB | 800×480 RGB |
-| Flash | 4 MB | 16 MB |
-| USB | CH340 serial adapter. Install the driver if the port is missing. | Native USB. If no port appears, hold **BOOT**, tap **RESET**, release **BOOT**. |
-| Address after setup | `http://crowpanel-xxxx.local/` | `http://waveshare-xxxx.local/` |
-| GitHub update file | `firmware.bin` | `firmware-waveshare-s3-lcd7.bin` |
+| | Elecrow CrowPanel 7″ | Waveshare ESP32-S3-Touch-LCD-7 | Guition JC4880P443C 4.3″ |
+|---|---|---|---|
+| Screen | 800×480 RGB | 800×480 RGB | 480×800 MIPI, shown as 800×480 |
+| Flash | 4 MB | 16 MB | 16 MB |
+| USB | CH340 serial adapter. Install the driver if the port is missing. | Native USB. If no port appears, hold **BOOT**, tap **RESET**, release **BOOT**. | USB-Serial/JTAG. Plug into the port that enumerates as a serial device. |
+| Address after setup | `http://crowpanel-xxxx.local/` | `http://waveshare-xxxx.local/` | `http://guition-xxxx.local/` |
+| Install | Web flasher | Web flasher | Build from source (`guition-jc4880p443`) |
+| GitHub update file | `firmware.bin` | `firmware-waveshare-s3-lcd7.bin` | `firmware-guition-jc4880p443.bin` |
 
 > [!CAUTION]
-> Both boards share the same screens but **not** the same firmware. Flash only the image for the panel in front of you. A CrowPanel image will not run on a Waveshare, or the other way around, and the panel refuses an update whose board id does not match.
+> The three boards share the same screens but **not** the same firmware. Flash only the image for the panel in front of you. The panel refuses an update whose board id does not match.
 
 `xxxx` is the last four hex digits of the panel's Wi‑Fi MAC address, so several panels on one network get different names. **≡ → System** shows the panel's address and hostname.
 
@@ -50,7 +51,9 @@ A 7″ touchscreen that shows your Bambu Lab AMS trays as filament swatches, plu
 
 ### 1. Flash
 
-Open the **[Web Flasher](https://wolfrage76.github.io/Filaman-Digital-Swatches/)** and stay inside your board's card. Pick one:
+CrowPanel and Waveshare: open the **[Web Flasher](https://wolfrage76.github.io/Filaman-Digital-Swatches/)** and stay inside your board's card. The Guition 4.3″ is installed from source; see [Build from source](#build-from-source) and [update its C6 radio](#advanced-guition-c6-radio).
+
+Pick one:
 
 - **Factory Reset & Install**: first install, or a blank screen.
 - **Keep Settings & Update**: a panel that already runs this firmware. If the installer asks to erase, choose **No**.
@@ -101,7 +104,7 @@ To test new features early, turn on **Include beta releases** on the panel's Fir
 ## Troubleshooting
 
 - **Blank screen after an update.** Factory Reset & Install for **your** board, power-cycle, then enter Wi‑Fi and FilaMan again.
-- **No serial port.** Chrome or Edge only. Try another cable. CrowPanel: CH340 driver. Waveshare: hold **BOOT**, tap **RESET**, release **BOOT**.
+- **No serial port.** Chrome or Edge only. Try another cable. CrowPanel: CH340 driver. Waveshare: hold **BOOT**, tap **RESET**, release **BOOT**. Guition: use the USB-Serial/JTAG port (`/dev/ttyACM*` on Linux) and flash at 115200.
 - **Icon stays amber, trays stay empty.** The FilaMan URL needs `http://` or `https://` and must be reachable from the panel's Wi‑Fi. Check the API key with **Menu → FilaMan → Test connection**, or open Diagnostics.
 - **An unplugged AMS-HT is still listed.** FilaMan keeps that slot in its database. Deactivate or remove it there.
 - **Two panels answer the same name.** Set a unique Hostname on each config page.
@@ -134,6 +137,7 @@ python3 -m venv .venv
 |---|---|
 | `crowpanel_7_idf` (default) | Elecrow CrowPanel 7″ |
 | `waveshare-s3-lcd7` | Waveshare ESP32-S3-Touch-LCD-7 |
+| `guition-jc4880p443` | Guition JC4880P443C 4.3″ (ESP32-P4) |
 
 Build and flash over USB:
 
@@ -141,7 +145,10 @@ Build and flash over USB:
 cd firmware
 ../.venv/bin/pio run -e crowpanel_7_idf -t upload
 ../.venv/bin/pio run -e waveshare-s3-lcd7 -t upload
+../.venv/bin/pio run -e guition-jc4880p443 -t upload
 ```
+
+The Guition glass is natively portrait. This build rotates it 270° so the same 800×480 UI fills the landscape module. **Menu → Display & Alerts** still flips the picture 180° if the mount is upside down. Wi-Fi is the onboard ESP32-C6, which must run the same ESP-Hosted version as this firmware (**2.9.6**). Factory radios are older. Update the C6 once before you rely on Wi-Fi; see [Advanced: Guition C6 radio](#advanced-guition-c6-radio).
 
 A local build behaves like the public images: set Wi‑Fi and FilaMan on the panel, and they stay in its settings storage across updates.
 
@@ -160,6 +167,10 @@ cd firmware
 # Waveshare
 OTA_PASSWORD=yourpass ../.venv/bin/pio run -e waveshare-s3-lcd7_ota -t upload \
   --upload-port waveshare-xxxx.local
+
+# Guition
+OTA_PASSWORD=yourpass ../.venv/bin/pio run -e guition-jc4880p443_ota -t upload \
+  --upload-port guition-xxxx.local
 ```
 
 > [!WARNING]
@@ -172,19 +183,87 @@ cd firmware
 ./webflasher/build_factory.sh
 ```
 
-This writes both boards into `docs/firmware/` and copies the CrowPanel app to `firmware.bin`.
+This writes the CrowPanel and Waveshare images into `docs/firmware/` and copies the CrowPanel app to `firmware.bin`. The Guition image is not published there; flash that board from source.
 
 > [!IMPORTANT]
 > The script refuses to run while `include/secrets.h` exists. Move that file aside first if you keep one.
 
 More detail, including how to add a board: [firmware/FLASHING.md](firmware/FLASHING.md).
 
+## Advanced: Guition C6 radio
+
+The Guition JC4880P443C has no Wi-Fi in the ESP32-P4. The radio is a separate ESP32-C6 on SDIO. This firmware's host stack is ESP-Hosted **2.9.6**. The board usually ships with an older slave (the boot log shows `Slave firmware version: 0.0.0` when the version RPC fails). Leave that mismatch in place and joins drop, SDIO asserts, and the picture can freeze. Display and touch work without the update. Wi-Fi does not stay reliable until the C6 matches.
+
+After a normal boot, the serial log should contain all three:
+
+```text
+Host firmware version: 2.9.6
+Slave firmware version: 2.9.6
+Versions Match!
+C6: radio firmware matches host
+```
+
+The running app updates the C6 by itself only when the slave reports a real older version (not `0.0.0`). Factory radios fail that check, so use the helper below once. The new C6 image lives in the C6's own flash and survives later P4 reflashes. Settings in the P4's NVS stay if you do not erase the whole chip.
+
+### Update over SDIO (no soldering)
+
+This helper replaces the Digital Swatch app on the P4 until you flash it back. It does not start Wi-Fi. Starting Wi-Fi on the old slave panics the SDIO driver mid-update.
+
+```bash
+cd firmware/c6_ota
+../../.venv/bin/pio run -t upload
+../../.venv/bin/pio device monitor -b 115200
+```
+
+Wait for `PASS: C6 radio firmware written`, then restore the panel:
+
+```bash
+cd ..
+../.venv/bin/pio run -e guition-jc4880p443 -t upload
+```
+
+Flash the P4 at **115200**. The USB-Serial/JTAG stub faults if the baud rate changes. The port is the Espressif USB device, `/dev/ttyACM*` on Linux.
+
+### Update over the C6 UART (if the helper prints FAIL)
+
+Wire a 3.3 V USB-TTL adapter to the Expand-IO header **JP1**. Leave the adapter's 3.3 V pin disconnected; the board already powers the C6.
+
+| Adapter | JP1 |
+|---|---|
+| TX | `C6_U0RXD` |
+| RX | `C6_U0TXD` |
+| GND | `GND` |
+
+Hold **`C6_IO9` (BOOT)** low and pulse **`C6_CHIP_PU`** if the adapter has no DTR/RTS auto-reset. Halt the P4 first. While Digital Swatch is running it resets the C6 on GPIO 54 and the flash dies mid-write.
+
+```bash
+cd firmware
+# Park the P4. /dev/ttyACM0 is the P4, not the USB-TTL.
+../.venv/bin/python -m esptool --chip esp32p4 --port /dev/ttyACM0 \
+  --before default_reset --after no_reset flash_id
+
+curl -LO https://espressif.github.io/arduino-esp32/hosted/esp32c6-v2.9.6.bin
+
+# /dev/ttyUSB0 is the USB-TTL. Use the matching Arduino 2.9.6 image, not an ESPHome 2.12 build.
+../.venv/bin/python -m esptool --chip esp32c6 --port /dev/ttyUSB0 --baud 115200 \
+  write_flash 0x10000 esp32c6-v2.9.6.bin
+../.venv/bin/python -m esptool --chip esp32c6 --port /dev/ttyUSB0 \
+  erase_region 0xd000 0x2000
+
+../.venv/bin/python -m esptool --chip esp32c6 --port /dev/ttyUSB0 --after hard_reset flash_id
+../.venv/bin/python -m esptool --chip esp32p4 --port /dev/ttyACM0 --after hard_reset flash_id
+```
+
+`erase_region 0xd000 0x2000` clears the C6 otadata so it boots the slot just written at `0x10000`.
+
+Full pin and command notes: [firmware/FLASHING.md](firmware/FLASHING.md#advanced-update-the-guition-esp32-c6).
+
 ## Project layout
 
 | Path | What it is |
 |---|---|
 | `docs/` | GitHub Pages web flasher and firmware binaries |
-| `firmware/` | ESP32-S3 firmware for both boards |
+| `firmware/` | Firmware for the CrowPanel, Waveshare, and Guition boards |
 | `bridge/` | Optional Bambuddy/direct-printer → MQTT publisher |
 | `firmware/FLASHING.md` | Flash matrix, GitHub update files, publish checklist |
 

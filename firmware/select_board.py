@@ -18,6 +18,7 @@ STASH = os.path.join(PROJECT_DIR, ".pio", "board_stash")
 BOARD_FOLDERS = {
     "BOARD_CROWPANEL_7": "crowpanel_7",
     "BOARD_WAVESHARE_S3_LCD7": "waveshare_s3_lcd7",
+    "BOARD_GUITION_JC4880": "guition_jc4880p443",
 }
 
 

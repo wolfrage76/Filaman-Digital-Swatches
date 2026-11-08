@@ -100,6 +100,7 @@
     }
     @media (min-width: 800px) {
       .boards { grid-template-columns: 1fr 1fr; align-items: stretch; }
+      .board.guition { grid-column: 1 / -1; }
     }
     .board {
       background: var(--card);
@@ -112,6 +113,7 @@
     }
     .board.crow { box-shadow: inset 0 3px 0 var(--mint); }
     .board.wave { box-shadow: inset 0 3px 0 var(--blue); }
+    .board.guition { box-shadow: inset 0 3px 0 var(--amber); }
     .board h2 {
       margin: 0;
       font-family: "Schibsted Grotesk", sans-serif;
@@ -204,9 +206,10 @@
         <p class="kicker">Firmware 0.22.0 · Chrome or Edge</p>
         <h1>Flash the panel that matches the card.</h1>
         <p class="lead">
-          Digital Swatch System runs on the Elecrow CrowPanel 7″ and the
-          Waveshare ESP32-S3-Touch-LCD-7. The images are not interchangeable.
-          Stay in the card for the board in your hand.
+          Digital Swatch System runs on the Elecrow CrowPanel 7″, the
+          Waveshare ESP32-S3-Touch-LCD-7, and the Guition JC4880P443C 4.3″.
+          The images are not interchangeable. CrowPanel and Waveshare install
+          from the cards below. The Guition board is installed from source.
         </p>
       </div>
     </header>
@@ -264,6 +267,17 @@
           </div>
         </div>
         <p class="host">Then scan the QR code on the panel, or open <strong>http://waveshare-xxxx.local/</strong> (last four of the MAC address)</p>
+      </section>
+
+      <section class="board guition" id="guition-jc4880p443">
+        <h2>Guition 4.3″</h2>
+        <p class="who">JC4880P443C · ESP32-P4 + ESP32-C6 · 16 MB flash · USB-Serial/JTAG</p>
+        <ol>
+          <li>Supported board. There is no web-flasher image for it yet.</li>
+          <li>Build and flash env <code>guition-jc4880p443</code> from source, at 115200 baud.</li>
+          <li>Update the onboard C6 radio to ESP-Hosted 2.9.6 before relying on Wi‑Fi. Factory slaves report version 0.0.0 and drop the link.</li>
+        </ol>
+        <p class="host">After setup the panel is at <strong>http://guition-xxxx.local/</strong>. Install and C6 steps are in the <a href="https://github.com/wolfrage76/Filaman-Digital-Swatches/blob/main/firmware/FLASHING.md#advanced-update-the-guition-esp32-c6">advanced C6 instructions</a>.</p>
       </section>
     </div>
 

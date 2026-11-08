@@ -30,6 +30,13 @@
   #include "boards/crowpanel_7/board_config.h"
 #elif defined(BOARD_WAVESHARE_S3_LCD7)
   #include "boards/waveshare_s3_lcd7/board_config.h"
+#elif defined(BOARD_GUITION_JC4880)
+  #include "boards/guition_jc4880p443/board_config.h"
+  void c6_update_loop();  // hosted C6 slave OTA after Wi-Fi is up
 #else
   #error "No board selected: the environment in platformio.ini must define a BOARD_* macro"
+#endif
+
+#if !defined(BOARD_GUITION_JC4880)
+inline void c6_update_loop() {}
 #endif

@@ -36,9 +36,16 @@ WifiPane pane = WifiPane::Info;
 std::vector<String> ssids;
 String selSsid;
 
+bool scanPending = false;
+bool scanRetried = false;
+unsigned long scanKickAt = 0;
+
 void showWifiInfo();
 void showScanList();
 void showPassword();
+void finishScan(int n);
+void kickScan();
+void showScanningPlaceholder();
 
 void setStatus(const String &text, uint32_t color) {
   if (!statusLabel) {
@@ -46,7 +53,6 @@ void setStatus(const String &text, uint32_t color) {
   }
   lv_label_set_text(statusLabel, text.c_str());
   lv_obj_set_style_text_color(statusLabel, lv_color_hex(color), 0);
-  lv_refr_now(NULL);  // render now so "Scanning..." shows before the blocking scan
 }
 
 void clearContent() {
@@ -148,46 +154,68 @@ void showWifiInfo() {
   makeRowButton(col, String(LV_SYMBOL_WIFI) + "  Scan & change WiFi", onScanAgain, nullptr);
 }
 
-void showScanList() {
-  pane = WifiPane::Scan;
-  clearContent();
-  lv_label_set_text(titleLabel,
-                    config().wifiConfigured() ? "WiFi Setup" : "Step 1 of 2: Connect WiFi");
-  setStatus("Scanning...", COL_MUTED);
+void showScanningPlaceholder() {
+  lv_obj_t *col = makeColumn();
+  makeRowButton(col, String(LV_SYMBOL_REFRESH) + "  Scan again", onScanAgain, nullptr);
+  lv_obj_t *hint = lv_label_create(col);
+  lv_obj_set_style_text_font(hint, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_color(hint, lv_color_hex(COL_MUTED), 0);
+  lv_obj_set_width(hint, lv_pct(100));
+  lv_label_set_long_mode(hint, LV_LABEL_LONG_WRAP);
+  lv_label_set_text(hint, "Scanning for networks...");
+}
 
+void kickScan() {
   // A pending join (or the core's auto-reconnect) blocks scanning; stop it
-  // first. maintainWifi() rejoins the saved network afterwards.
+  // first. maintainWifi() skips reconnect while wifi_setup_scanning().
   if (WiFi.status() != WL_CONNECTED) {
     mdns_stop();
     WiFi.disconnect(/*wifioff=*/false, /*eraseap=*/false);
-    delay(100);
   }
-  int n = WiFi.scanNetworks();
+  const int n = WiFi.scanNetworks(true);
   if (n == WIFI_SCAN_FAILED) {
-    delay(500);
-    n = WiFi.scanNetworks();
+    if (!scanRetried) {
+      scanRetried = true;
+      scanKickAt = millis() + 400;
+      return;
+    }
+    finishScan(WIFI_SCAN_FAILED);
+    return;
   }
+  scanPending = true;
+  scanKickAt = 0;
+}
+
+void finishScan(int n) {
+  scanPending = false;
+  scanKickAt = 0;
   ssids.clear();
   std::vector<int> rssis;
-  for (int i = 0; i < n; ++i) {
-    String s = WiFi.SSID(i);
-    if (!s.length()) {
-      continue;
-    }
-    bool found = false;
-    for (size_t j = 0; j < ssids.size(); ++j) {
-      if (ssids[j] == s) {
-        if (WiFi.RSSI(i) > rssis[j]) rssis[j] = WiFi.RSSI(i);
-        found = true;
-        break;
+  if (n > 0) {
+    for (int i = 0; i < n; ++i) {
+      String s = WiFi.SSID(i);
+      if (!s.length()) {
+        continue;
       }
-    }
-    if (!found) {
-      ssids.push_back(s);
-      rssis.push_back(WiFi.RSSI(i));
+      bool found = false;
+      for (size_t j = 0; j < ssids.size(); ++j) {
+        if (ssids[j] == s) {
+          if (WiFi.RSSI(i) > rssis[j]) rssis[j] = WiFi.RSSI(i);
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        ssids.push_back(s);
+        rssis.push_back(WiFi.RSSI(i));
+      }
     }
   }
   WiFi.scanDelete();
+
+  if (pane != WifiPane::Scan || !overlay || lv_obj_has_flag(overlay, LV_OBJ_FLAG_HIDDEN)) {
+    return;
+  }
 
   const String cur = config().wifiConfigured() ? config().wifiSsid : String("none");
   if (n < 0) {
@@ -197,6 +225,7 @@ void showScanList() {
               COL_MUTED);
   }
 
+  clearContent();
   lv_obj_t *col = makeColumn();
   makeRowButton(col, String(LV_SYMBOL_REFRESH) + "  Scan again", onScanAgain, nullptr);
   for (size_t i = 0; i < ssids.size(); ++i) {
@@ -206,6 +235,24 @@ void showScanList() {
     }
     makeRowButton(col, label, onSsidClicked, reinterpret_cast<void *>(static_cast<intptr_t>(i)));
   }
+}
+
+void showScanList() {
+  pane = WifiPane::Scan;
+  lv_label_set_text(titleLabel,
+                    config().wifiConfigured() ? "WiFi Setup" : "Step 1 of 2: Connect WiFi");
+  if (scanPending || scanKickAt != 0) {
+    clearContent();
+    setStatus("Scanning...", COL_MUTED);
+    showScanningPlaceholder();
+    return;
+  }
+  clearContent();
+  setStatus("Scanning...", COL_MUTED);
+  showScanningPlaceholder();
+  scanRetried = false;
+  // Let a disconnect settle before the radio starts scanning.
+  scanKickAt = millis() + (WiFi.status() == WL_CONNECTED ? 0 : 120);
 }
 
 void showPassword() {
@@ -330,3 +377,25 @@ void wifi_setup_close() {
 }
 
 bool wifi_setup_is_open() { return overlay && !lv_obj_has_flag(overlay, LV_OBJ_FLAG_HIDDEN); }
+
+bool wifi_setup_scanning() { return scanPending || scanKickAt != 0; }
+
+void wifi_setup_loop() {
+  if (scanKickAt != 0 && static_cast<long>(millis() - scanKickAt) >= 0 && !scanPending) {
+    kickScan();
+  }
+  if (!scanPending) {
+    return;
+  }
+  const int n = WiFi.scanComplete();
+  if (n == WIFI_SCAN_RUNNING) {
+    return;
+  }
+  if (n == WIFI_SCAN_FAILED && !scanRetried) {
+    scanRetried = true;
+    scanPending = false;
+    scanKickAt = millis() + 400;
+    return;
+  }
+  finishScan(n);
+}

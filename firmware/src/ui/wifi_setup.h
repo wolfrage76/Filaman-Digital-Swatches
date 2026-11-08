@@ -8,3 +8,5 @@ void wifi_setup_begin();  // build the (hidden) overlay once, at startup
 void wifi_setup_open();   // show it and scan
 void wifi_setup_close();
 bool wifi_setup_is_open();
+void wifi_setup_loop();       // collect an in-flight async scan
+bool wifi_setup_scanning();   // true while a scan is running (skip reconnect)

@@ -56,6 +56,8 @@ constexpr const char *kSharedManifestPath = "manifest-update.json";
 String pagesBoardManifestPath() {
 #if defined(BOARD_WAVESHARE_S3_LCD7)
   return "manifest-update-waveshare-s3-lcd7.json";
+#elif defined(BOARD_GUITION_JC4880)
+  return "manifest-update-guition-jc4880p443.json";
 #else
   return "manifest-update.json";
 #endif
@@ -478,7 +480,7 @@ bool ota_check_github_update(String &latestVersionOut, String &downloadUrlOut, S
 
   // Until renamed board assets are on Pages, CrowPanel can still fetch the
   // legacy shared firmware.bin used by the published update manifest.
-#if !defined(BOARD_WAVESHARE_S3_LCD7)
+#if !defined(BOARD_WAVESHARE_S3_LCD7) && !defined(BOARD_GUITION_JC4880)
   // Betas exist only as GitHub release assets; Pages carries the stable image.
   if (!ota_is_prerelease(latestVersionOut) && downloadUrlOut.endsWith(BOARD_OTA_ASSET)) {
     downloadUrlOut = String(kPagesBase) + "firmware/firmware.bin";

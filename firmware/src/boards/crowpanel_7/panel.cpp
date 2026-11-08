@@ -229,6 +229,10 @@ const uint16_t *panelFramebuffer() {
   return gfx && !scanoutStopped ? gfx->getFramebuffer() : nullptr;
 }
 
+void panelPresent() {}
+
+void panelPoll() {}
+
 void panelStopScanout() {
   panelBacklightOff();
   if (scanoutStopped) {

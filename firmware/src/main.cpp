@@ -54,8 +54,13 @@ uint32_t maxLoopUs = 0;
 uint32_t maxLvglUs = 0;
 uint32_t maxNetUs = 0;
 
-// Offscreen draw buffers in internal SRAM (24 lines = ~38 KB per buffer).
+// Offscreen draw buffers in internal SRAM. The Guition settings screen is one
+// full-frame paint; a taller buffer means fewer flushes for that paint.
+#if defined(BOARD_GUITION_JC4880)
+constexpr int LVGL_BUF_LINES = 48;
+#else
 constexpr int LVGL_BUF_LINES = 24;
+#endif
 
 lv_disp_draw_buf_t drawBuffer;
 lv_disp_drv_t displayDriver;
@@ -100,8 +105,13 @@ void flushDisplay(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_
   } else {
     panelBlitStrip(area->x1, area->y1, w, h, px);
   }
-#if !DISPLAY_USE_BOUNCE_BUFFER
+  if (lv_disp_flush_is_last(disp)) {
+    panelPresent();
+  }
+#if !DISPLAY_USE_BOUNCE_BUFFER && !defined(BOARD_GUITION_JC4880)
   // Direct-PSRAM mode only: hand the PSRAM bus back to scanout after each strip.
+  // The Guition glass scans a different buffer, so this yield just stalls a
+  // full-screen settings redraw while Wi-Fi runs.
   yield();
   delayMicroseconds(20 + static_cast<uint32_t>(h) * 12);
 #endif
@@ -182,7 +192,7 @@ const char *wifiStatusText(wl_status_t status) {
     case WL_IDLE_STATUS:
       return "WiFi idle";
     case WL_NO_SSID_AVAIL:
-      return "WiFi: SSID not found (need 2.4GHz)";
+      return "WiFi: network not found";
     case WL_SCAN_COMPLETED:
       return "WiFi scanning";
     case WL_CONNECTED:
@@ -219,15 +229,42 @@ const char *disconnectReasonText(int reason) {
   }
 }
 
+void wifiRadioAwake() {
+  const esp_err_t setErr = esp_wifi_set_ps(WIFI_PS_NONE);
+  wifi_ps_type_t ps = WIFI_PS_MAX_MODEM;
+  const esp_err_t getErr = esp_wifi_get_ps(&ps);
+  static int lastLogged = -2;
+  const int mode = (getErr == ESP_OK) ? static_cast<int>(ps) : -1;
+  const bool awake = setErr == ESP_OK && getErr == ESP_OK && ps == WIFI_PS_NONE;
+  if (mode != lastLogged || !awake) {
+    lastLogged = mode;
+    device_logf("WiFi power save %s (set=%d read=%d)", awake ? "off" : "NOT off",
+                static_cast<int>(setErr), mode);
+  }
+}
+
+void wifiForceAwake() {
+  // The C6 starts in modem sleep (WIFI_PS_MIN_MODEM) and will put that back
+  // after it associates. Set the Arduino preference first so STA start does
+  // not restore sleep, then write the radio and read it back.
+  // WiFi.setSleep takes the Wi-Fi lock. The event task already holds that
+  // lock, so only the plain driver call is safe from onWifiEvent.
+  WiFi.setSleep(WIFI_PS_NONE);
+  wifiRadioAwake();
+}
+
 void onWifiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
   if (event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED) {
     lastDisconnectReason = info.wifi_sta_disconnected.reason;
     device_logf("WiFi disconnect reason=%d", lastDisconnectReason);
-  } else if (event == ARDUINO_EVENT_WIFI_STA_GOT_IP) {
-    // Runs on the WiFi event task. LVGL and the OTA/web servers belong to
-    // loop(), so maintainWifi() does the rest when it sees WL_CONNECTED.
-    lastDisconnectReason = -1;
-    device_logf("WiFi got IP %s", WiFi.localIP().toString().c_str());
+  } else if (event == ARDUINO_EVENT_WIFI_STA_CONNECTED || event == ARDUINO_EVENT_WIFI_STA_GOT_IP) {
+    esp_wifi_set_ps(WIFI_PS_NONE);
+    if (event == ARDUINO_EVENT_WIFI_STA_GOT_IP) {
+      // Runs on the WiFi event task. LVGL and the OTA/web servers belong to
+      // loop(), so maintainWifi() does the rest when it sees WL_CONNECTED.
+      lastDisconnectReason = -1;
+      device_logf("WiFi got IP %s", WiFi.localIP().toString().c_str());
+    }
   }
 }
 
@@ -244,6 +281,7 @@ void beginWifiJoin() {
   lastWifiAttempt = wifiBeginAt;
   setStatus(String("WiFi joining ") + config().wifiSsid);
   WiFi.begin(config().wifiSsid.c_str(), config().wifiPassword.c_str());
+  wifiForceAwake();
   lastWifiStatus = WiFi.status();
 }
 
@@ -251,15 +289,13 @@ void startWifi() {
   WiFi.persistent(false);
   // Core 3 hands the hostname to the station netif only when mode() switches
   // the station on; set after mode(), the first DHCP request carried the
-  // default "esp32s3-XXXXXX".
+  // default "esp32s3-XXXXXX". Store "no sleep" before mode() so the STA-start
+  // handler does not turn modem sleep back on.
+  WiFi.setSleep(WIFI_PS_NONE);
   WiFi.setHostname(config().otaHostname.c_str());
   WiFi.mode(WIFI_STA);
-  // No modem sleep: with it the radio dozes between beacons and replies lag
-  // by hundreds of ms, which made FilaMan polls and GitHub downloads time out.
-  // Panels are mains-powered, so the extra radio current doesn't matter.
-  WiFi.setSleep(WIFI_PS_NONE);
   WiFi.onEvent(onWifiEvent);
-  esp_wifi_set_ps(WIFI_PS_NONE);
+  wifiForceAwake();
   if (!config().wifiConfigured()) {
     setStatus("Set up WiFi on screen");
     wifi_setup_open();
@@ -305,14 +341,23 @@ void maintainWifi() {
     return;
   }
 
+  if (wifi_setup_scanning()) {
+    return;
+  }
+
   ui_set_ip_address("");
 
   if (status != lastWifiStatus) {
     lastWifiStatus = status;
-    if (status == WL_NO_SSID_AVAIL) {
-      setStatus("WiFi: SSID not found (need 2.4GHz)");
-    } else if (status == WL_CONNECT_FAILED) {
+    // The coprocessor often reports "no AP" on the first scans of a join that
+    // then succeeds. That is not proof the network is on the wrong band.
+    const bool joining = now - wifiBeginAt < WIFI_CONNECT_TIMEOUT_MS;
+    if (status == WL_CONNECT_FAILED) {
       setStatus("WiFi: auth failed (check password)");
+    } else if (joining) {
+      setStatus(String("WiFi joining ") + config().wifiSsid);
+    } else if (status == WL_NO_SSID_AVAIL) {
+      setStatus("WiFi: network not found");
     } else if (status == WL_DISCONNECTED && lastDisconnectReason >= 0) {
       const char *why = disconnectReasonText(lastDisconnectReason);
       if (why) {
@@ -320,8 +365,6 @@ void maintainWifi() {
       } else {
         setStatus(String("WiFi fail rc=") + String(lastDisconnectReason));
       }
-    } else if (now - wifiBeginAt < WIFI_CONNECT_TIMEOUT_MS) {
-      setStatus(String("WiFi joining ") + config().wifiSsid);
     } else {
       setStatus(wifiStatusText(status));
     }
@@ -484,6 +527,7 @@ void loop() {
   lastLoopStartMs = nowMs;
 
   if (!ota_is_active()) {
+    panelPoll();
     lv_timer_handler();
     backlight_loop();
     if (nowMs >= mqttQuietUntilMs) {
@@ -496,6 +540,8 @@ void loop() {
   }
 
   maintainWifi();
+  wifi_setup_loop();
+  c6_update_loop();
   mdns_sync_state();
   if (WiFi.status() == WL_CONNECTED) {
     ota_loop();

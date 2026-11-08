@@ -239,4 +239,6 @@ firmware/components/arduino
 # Rewritten by pioarduino from custom_sdkconfig on every board switch.
 firmware/sdkconfig.defaults
 firmware/dist/
+firmware/c6_ota/esp32c6-v2.9.6.bin
+firmware/c6_ota/src/c6_fw.S
 .claude/settings.local.json
