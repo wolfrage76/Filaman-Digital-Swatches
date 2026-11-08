@@ -1,0 +1,16 @@
+{
+  "name": "Digital Swatch System (Guition)",
+  "version": "0.23.0",
+  "new_install_prompt_erase": true,
+  "builds": [
+    {
+      "chipFamily": "ESP32-P4",
+      "parts": [
+        {
+          "path": "firmware/factory-guition-jc4880p443.bin",
+          "offset": 0
+        }
+      ]
+    }
+  ]
+}

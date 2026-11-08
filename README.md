@@ -37,7 +37,7 @@ A touchscreen that shows your Bambu Lab AMS trays as filament swatches, plus liv
 | Flash | 4 MB | 16 MB | 16 MB |
 | USB | CH340 serial adapter. Install the driver if the port is missing. | Native USB. If no port appears, hold **BOOT**, tap **RESET**, release **BOOT**. | USB-Serial/JTAG. Plug into the port that enumerates as a serial device. |
 | Address after setup | `http://crowpanel-xxxx.local/` | `http://waveshare-xxxx.local/` | `http://guition-xxxx.local/` |
-| Install | Web flasher | Web flasher | Build from source (`guition-jc4880p443`) |
+| Install | Web flasher | Web flasher | Web flasher |
 | GitHub update file | `firmware.bin` | `firmware-waveshare-s3-lcd7.bin` | `firmware-guition-jc4880p443.bin` |
 
 > [!CAUTION]
@@ -51,7 +51,7 @@ A touchscreen that shows your Bambu Lab AMS trays as filament swatches, plus liv
 
 ### 1. Flash
 
-CrowPanel and Waveshare: open the **[Web Flasher](https://wolfrage76.github.io/Filaman-Digital-Swatches/)** and stay inside your board's card. The Guition 4.3″ is installed from source; see [Build from source](#build-from-source) and [update its C6 radio](#advanced-guition-c6-radio).
+Open the **[Web Flasher](https://wolfrage76.github.io/Filaman-Digital-Swatches/)** and stay inside your board's card. Each card has only that board's USB steps. The Guition card is also where the [C6 radio update](#advanced-guition-c6-radio) is called out; CrowPanel and Waveshare do not have a co-processor.
 
 Pick one:
 
@@ -183,7 +183,7 @@ cd firmware
 ./webflasher/build_factory.sh
 ```
 
-This writes the CrowPanel and Waveshare images into `docs/firmware/` and copies the CrowPanel app to `firmware.bin`. The Guition image is not published there; flash that board from source.
+This writes the CrowPanel, Waveshare, and Guition images into `docs/firmware/` and copies the CrowPanel app to `firmware.bin`.
 
 > [!IMPORTANT]
 > The script refuses to run while `include/secrets.h` exists. Move that file aside first if you keep one.

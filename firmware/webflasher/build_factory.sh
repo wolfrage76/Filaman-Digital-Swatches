@@ -1,17 +1,13 @@
 #!/usr/bin/env bash
-# Builds CrowPanel + Waveshare images for the GitHub Pages Web Flasher.
+# Builds CrowPanel, Waveshare, and Guition images for the GitHub Pages Web Flasher.
 #
-# CrowPanel (docs/firmware/):
-#   factory-crowpanel-s3-lcd7.bin, firmware-crowpanel-s3-lcd7.bin,
-#   bootloader-crowpanel-s3-lcd7.bin, partitions-crowpanel-s3-lcd7.bin
-# Waveshare (docs/firmware/):
-#   factory-waveshare-s3-lcd7.bin, firmware-waveshare-s3-lcd7.bin,
-#   bootloader-waveshare-s3-lcd7.bin, partitions-waveshare-s3-lcd7.bin
+# CrowPanel (docs/firmware/): bootloader at 0x0, 4 MB
+# Waveshare (docs/firmware/): bootloader at 0x0, 16 MB
+# Guition (docs/firmware/): ESP32-P4 bootloader at 0x2000, 16 MB
 #
 # Also writes legacy CrowPanel names (factory.bin / firmware.bin / …) so
 # panels still on older firmware can GitHub-OTA once more.
-#
-# CrowPanel flash size 4 MB; Waveshare 16 MB. Do not cross-flash boards.
+# Do not cross-flash boards.
 set -euo pipefail
 cd "$(dirname "$0")/.."   # -> firmware/
 
@@ -47,16 +43,17 @@ fi
 mkdir -p "$DOCS_OUT"
 cp -f "$BOOT_APP0" "$DOCS_OUT/boot_app0.bin"
 
-# ESP32-S3 layout (min_spiffs / 16MB): bootloader 0x0, partitions 0x8000,
+# S3: bootloader 0x0. P4: bootloader 0x2000. Both: partitions 0x8000,
 # otadata seed (boot_app0) 0xe000, app 0x10000.
 merge_factory() {
-  local env="$1" flash_size="$2" out_factory="$3" out_fw="$4" out_bl="$5" out_pt="$6"
+  local env="$1" chip="$2" flash_size="$3" bl_offset="$4"
+  local out_factory="$5" out_fw="$6" out_bl="$7" out_pt="$8"
   local B=".pio/build/${env}"
   echo "Building ${env} (v${VERSION})..."
   "$PIO" run -e "$env"
-  $ESPTOOL --chip esp32s3 merge-bin -o "$out_factory" \
+  $ESPTOOL --chip "$chip" merge-bin -o "$out_factory" \
     --flash-mode keep --flash-freq keep --flash-size "$flash_size" \
-    0x0 "$B/bootloader.bin" \
+    "$bl_offset" "$B/bootloader.bin" \
     0x8000 "$B/partitions.bin" \
     0xe000 "$BOOT_APP0" \
     0x10000 "$B/firmware.bin"
@@ -67,7 +64,7 @@ merge_factory() {
   echo "  $out_fw ($(stat -c%s "$out_fw") bytes)"
 }
 
-merge_factory crowpanel_7_idf 4MB \
+merge_factory crowpanel_7_idf esp32s3 4MB 0x0 \
   "$DOCS_OUT/factory-crowpanel-s3-lcd7.bin" \
   "$DOCS_OUT/firmware-crowpanel-s3-lcd7.bin" \
   "$DOCS_OUT/bootloader-crowpanel-s3-lcd7.bin" \
@@ -79,11 +76,17 @@ cp -f "$DOCS_OUT/firmware-crowpanel-s3-lcd7.bin" "$DOCS_OUT/firmware.bin"
 cp -f "$DOCS_OUT/bootloader-crowpanel-s3-lcd7.bin" "$DOCS_OUT/bootloader.bin"
 cp -f "$DOCS_OUT/partitions-crowpanel-s3-lcd7.bin" "$DOCS_OUT/partitions.bin"
 
-merge_factory waveshare-s3-lcd7 16MB \
+merge_factory waveshare-s3-lcd7 esp32s3 16MB 0x0 \
   "$DOCS_OUT/factory-waveshare-s3-lcd7.bin" \
   "$DOCS_OUT/firmware-waveshare-s3-lcd7.bin" \
   "$DOCS_OUT/bootloader-waveshare-s3-lcd7.bin" \
   "$DOCS_OUT/partitions-waveshare-s3-lcd7.bin"
+
+merge_factory guition-jc4880p443 esp32p4 16MB 0x2000 \
+  "$DOCS_OUT/factory-guition-jc4880p443.bin" \
+  "$DOCS_OUT/firmware-guition-jc4880p443.bin" \
+  "$DOCS_OUT/bootloader-guition-jc4880p443.bin" \
+  "$DOCS_OUT/partitions-guition-jc4880p443.bin"
 
 # Keep published manifest versions in sync with firmware.
 if [[ -n "$VERSION" ]]; then
@@ -92,7 +95,9 @@ if [[ -n "$VERSION" ]]; then
     ../docs/manifest-factory.json \
     ../docs/manifest-update.json \
     ../docs/manifest-waveshare-s3-lcd7.json \
-    ../docs/manifest-update-waveshare-s3-lcd7.json
+    ../docs/manifest-update-waveshare-s3-lcd7.json \
+    ../docs/manifest-guition-jc4880p443.json \
+    ../docs/manifest-update-guition-jc4880p443.json
   do
     if [[ -f "$m" ]]; then
       python3 - "$m" "$VERSION" <<'PY'
@@ -109,4 +114,4 @@ PY
   done
 fi
 
-echo "Wrote CrowPanel + Waveshare factory/update images to $DOCS_OUT/"
+echo "Wrote CrowPanel, Waveshare, and Guition factory/update images to $DOCS_OUT/"

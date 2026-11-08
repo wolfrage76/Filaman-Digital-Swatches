@@ -5,7 +5,7 @@ How to flash, update, and publish firmware for the supported boards (CrowPanel 7
 The firmware version lives in `include/config.h` (`FIRMWARE_VERSION`). `build_factory.sh` copies it into every published manifest.
 
 > [!CAUTION]
-> CrowPanel, Waveshare, and Guition share the UI but use different images. Do not cross-flash. The running firmware rejects an image whose embedded board id does not match. The Guition image is built from source; it is not on the web flasher.
+> CrowPanel, Waveshare, and Guition share the UI but use different images. Do not cross-flash. The running firmware rejects an image whose embedded board id does not match. The web flasher page has one card per board; follow only that card.
 
 ## Board matrix
 
@@ -16,10 +16,10 @@ The firmware version lives in `include/config.h` (`FIRMWARE_VERSION`). `build_fa
 | Flash | 4 MB | 16 MB | 16 MB |
 | USB | CH340. Install the driver if the browser shows no port. | Native USB. Hold **BOOT**, tap **RESET**, release **BOOT** if the port is missing. | USB-Serial/JTAG on the P4. |
 | Default hostname | `crowpanel-xxxx.local` | `waveshare-xxxx.local` | `guition-xxxx.local` |
-| Keep-settings manifest | `docs/manifest-update.json` | `docs/manifest-update-waveshare-s3-lcd7.json` | not published |
-| Factory manifest | `docs/manifest-factory.json` | `docs/manifest-waveshare-s3-lcd7.json` | not published |
+| Keep-settings manifest | `docs/manifest-update.json` | `docs/manifest-update-waveshare-s3-lcd7.json` | `docs/manifest-update-guition-jc4880p443.json` |
+| Factory manifest | `docs/manifest-factory.json` | `docs/manifest-waveshare-s3-lcd7.json` | `docs/manifest-guition-jc4880p443.json` |
 | App image | `firmware-crowpanel-s3-lcd7.bin` | `firmware-waveshare-s3-lcd7.bin` | `firmware-guition-jc4880p443.bin` |
-| GitHub update download | `firmware.bin` (same bytes as the CrowPanel app) | `firmware-waveshare-s3-lcd7.bin` | local / OTA upload only |
+| GitHub update download | `firmware.bin` (same bytes as the CrowPanel app) | `firmware-waveshare-s3-lcd7.bin` | `firmware-guition-jc4880p443.bin` |
 
 `xxxx` is the last four hex digits of the panel's Wi‑Fi MAC address. **≡ → System** shows it.
 
@@ -27,7 +27,7 @@ The firmware version lives in `include/config.h` (`FIRMWARE_VERSION`). `build_fa
 
 Needs Chrome or Edge and a USB data cable: <https://wolfrage76.github.io/Filaman-Digital-Swatches/>
 
-1. Open the card for the board you are holding.
+1. Open the card for the board you are holding. CrowPanel steps are the CH340 port. Waveshare steps are native USB and the BOOT/RESET sequence. Guition steps are the USB-Serial/JTAG port at 115200 and the C6 2.9.6 update, which the other cards do not mention.
 2. Pick one:
    - **Factory Reset & Install** for a first flash or a blank screen. The panel then walks you through Wi‑Fi and FilaMan.
    - **Keep Settings & Update** when Wi‑Fi and FilaMan are already saved. If asked to erase, choose **No**.
@@ -91,7 +91,7 @@ cd firmware
 ./webflasher/build_factory.sh
 ```
 
-This builds the CrowPanel and Waveshare images and writes their factory, app, bootloader and partition images to `docs/firmware/`. It copies the CrowPanel set to the unsuffixed names (`firmware.bin`, `factory.bin`, …) and stamps the version into all five manifests under `docs/`. The Guition board is supported from source and is not part of this publish step.
+This builds the CrowPanel, Waveshare, and Guition images and writes their factory, app, bootloader and partition images to `docs/firmware/`. It copies the CrowPanel set to the unsuffixed names (`firmware.bin`, `factory.bin`, …) and stamps the version into the manifests under `docs/`. The Guition bootloader is merged at `0x2000`.
 
 > [!IMPORTANT]
 > The script refuses to run while `include/secrets.h` exists, because the factory image would embed its defaults. Move the file aside for the build:
@@ -102,9 +102,9 @@ This builds the CrowPanel and Waveshare images and writes their factory, app, bo
 
 Before you commit `docs/firmware/`, check that:
 
-- [ ] Both app images contain the version from `include/config.h`.
+- [ ] The CrowPanel, Waveshare, and Guition app images contain the version from `include/config.h`.
 - [ ] `firmware.bin` matches `firmware-crowpanel-s3-lcd7.bin`.
-- [ ] The five manifests under `docs/` show that same version.
+- [ ] The manifests under `docs/` show that same version, including both Guition manifests.
 - [ ] The binaries do not contain your Wi‑Fi password or FilaMan API key.
 - [ ] `include/secrets.h`, if you keep one, is not staged.
 

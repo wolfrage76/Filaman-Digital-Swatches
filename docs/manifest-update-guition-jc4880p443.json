@@ -1,0 +1,28 @@
+{
+  "name": "Digital Swatch System (Guition)",
+  "version": "0.23.0",
+  "new_install_prompt_erase": true,
+  "builds": [
+    {
+      "chipFamily": "ESP32-P4",
+      "parts": [
+        {
+          "path": "firmware/bootloader-guition-jc4880p443.bin",
+          "offset": 8192
+        },
+        {
+          "path": "firmware/partitions-guition-jc4880p443.bin",
+          "offset": 32768
+        },
+        {
+          "path": "firmware/boot_app0.bin",
+          "offset": 57344
+        },
+        {
+          "path": "firmware/firmware-guition-jc4880p443.bin",
+          "offset": 65536
+        }
+      ]
+    }
+  ]
+}

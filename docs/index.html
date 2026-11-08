@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700&family=IBM+Plex+Mono:wght@500&family=Schibsted+Grotesk:wght@600;700&display=swap" rel="stylesheet">
-  <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js"></script>
+  <script type="module" src="https://unpkg.com/esp-web-tools@10.4.0/dist/web/install-button.js"></script>
   <style>
     :root {
       --ink: #070a0f;
@@ -203,13 +203,13 @@
         <i class="klein"></i>
       </div>
       <div>
-        <p class="kicker">Firmware 0.22.0 · Chrome or Edge</p>
+        <p class="kicker">Firmware 0.23.0 · Chrome or Edge</p>
         <h1>Flash the panel that matches the card.</h1>
         <p class="lead">
           Digital Swatch System runs on the Elecrow CrowPanel 7″, the
           Waveshare ESP32-S3-Touch-LCD-7, and the Guition JC4880P443C 4.3″.
-          The images are not interchangeable. CrowPanel and Waveshare install
-          from the cards below. The Guition board is installed from source.
+          The images are not interchangeable. Use only the card for the board
+          in your hand.
         </p>
       </div>
     </header>
@@ -220,8 +220,8 @@
         <p class="who">Elecrow · 4 MB flash · CH340 USB</p>
         <ol>
           <li>Install a CH340 driver if the serial port does not appear.</li>
-          <li>Connect a USB data cable.</li>
-          <li>Use the buttons in this card only.</li>
+          <li>Connect a USB data cable to the CH340 port.</li>
+          <li>Use only the buttons on this card.</li>
         </ol>
         <div class="choices">
           <div class="choice keep">
@@ -246,9 +246,9 @@
         <h2>Waveshare 7″</h2>
         <p class="who">ESP32-S3-Touch-LCD-7 · 16 MB flash · native USB</p>
         <ol>
-          <li>Plug into the board USB port.</li>
+          <li>Plug into the board's native USB port.</li>
           <li>No port? Hold BOOT, tap RESET, release BOOT.</li>
-          <li>Do not use the CrowPanel buttons.</li>
+          <li>Use only the buttons on this card.</li>
         </ol>
         <div class="choices">
           <div class="choice keep">
@@ -273,16 +273,32 @@
         <h2>Guition 4.3″</h2>
         <p class="who">JC4880P443C · ESP32-P4 + ESP32-C6 · 16 MB flash · USB-Serial/JTAG</p>
         <ol>
-          <li>Supported board. There is no web-flasher image for it yet.</li>
-          <li>Build and flash env <code>guition-jc4880p443</code> from source, at 115200 baud.</li>
-          <li>Update the onboard C6 radio to ESP-Hosted 2.9.6 before relying on Wi‑Fi. Factory slaves report version 0.0.0 and drop the link.</li>
+          <li>Plug into the USB-Serial/JTAG port. It shows up as a serial device. Flash stays at 115200; if the installer drops the port, use the USB command in the README instead of retrying faster.</li>
+          <li>Use only the buttons on this card. This glass is portrait and is rotated to the same 800×480 screens.</li>
+          <li>Before you rely on Wi‑Fi, update the onboard ESP32-C6 to ESP-Hosted 2.9.6. Factory radios report slave 0.0.0 and drop the link. Display and touch do not need that step. <a href="https://github.com/wolfrage76/Filaman-Digital-Swatches/blob/main/firmware/FLASHING.md#advanced-update-the-guition-esp32-c6">C6 update steps</a>.</li>
         </ol>
-        <p class="host">After setup the panel is at <strong>http://guition-xxxx.local/</strong>. Install and C6 steps are in the <a href="https://github.com/wolfrage76/Filaman-Digital-Swatches/blob/main/firmware/FLASHING.md#advanced-update-the-guition-esp32-c6">advanced C6 instructions</a>.</p>
+        <div class="choices">
+          <div class="choice keep">
+            <h3>Keep settings</h3>
+            <p>Guition app update only. Leave erase off so Wi‑Fi and FilaMan stay. Does not update the C6 radio.</p>
+            <esp-web-install-button manifest="./manifest-update-guition-jc4880p443.json">
+              <button slot="activate" type="button">Keep Settings &amp; Update</button>
+            </esp-web-install-button>
+          </div>
+          <div class="choice reset">
+            <h3>Factory reset</h3>
+            <p>Full 16 MB image. Use for a first flash or a blank screen. Erases saved settings. Does not update the C6 radio.</p>
+            <esp-web-install-button manifest="./manifest-guition-jc4880p443.json">
+              <button slot="activate" type="button">Factory Reset &amp; Install</button>
+            </esp-web-install-button>
+          </div>
+        </div>
+        <p class="host">Then scan the QR code on the panel, or open <strong>http://guition-xxxx.local/</strong> (last four of the Wi‑Fi MAC)</p>
       </section>
     </div>
 
     <p class="after">
-      <strong>After the flash finishes,</strong> power-cycle the panel, join 2.4 GHz Wi‑Fi on the touchscreen, and set the FilaMan URL and API key at the address above.
+      <strong>After the flash finishes,</strong> power-cycle the panel, join 2.4 GHz Wi‑Fi on the touchscreen, and set the FilaMan URL and API key at the address on that card. The C6 radio step applies only to the Guition card.
       This page needs Chrome or Edge over HTTPS, or <code>http://localhost</code>.
       Setup notes are in the <a href="https://github.com/wolfrage76/Filaman-Digital-Swatches">project README</a>.
     </p>
