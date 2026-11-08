@@ -113,14 +113,14 @@ Before you commit `docs/firmware/`, check that:
 Betas are GitHub **pre-releases** only. They never go to `docs/`, so the web flasher and the Pages manifests always stay on the latest stable release.
 
 1. Set `FIRMWARE_VERSION` to a pre-release version, for example `0.23.0-beta.1`. Number later betas `-beta.2`, `-beta.10`, and so on; `-rc.1` sorts after any `-beta`.
-2. Build the two update images into `firmware/dist/beta/` (git-ignored):
+2. Build the update images into `firmware/dist/beta/` (git-ignored):
 
    ```bash
    cd firmware
    ./webflasher/build_beta.sh
    ```
 
-3. Commit the version bump, then create the pre-release with the command the script prints (`gh release create … --prerelease`), attaching both `.bin` files.
+3. Commit the version bump, then create the pre-release with the command the script prints (`gh release create … --prerelease`), attaching the CrowPanel, Waveshare, and Guition `.bin` files.
 
 Panels see a beta only when **Include beta releases** is on, either on the panel's Firmware Update screen or on the web config page. They're offered the newer of the latest beta and the latest stable release, so testers move back onto stable once `0.23.0` ships, because a release sorts after its betas.
 

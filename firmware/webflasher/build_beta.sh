@@ -3,7 +3,8 @@
 # is touched: the web flasher and Pages manifests stay on the stable release.
 #
 # Writes to dist/beta/ (git-ignored), named the way panels look for them:
-#   firmware-crowpanel-s3-lcd7.bin, firmware-waveshare-s3-lcd7.bin
+#   firmware-crowpanel-s3-lcd7.bin, firmware-waveshare-s3-lcd7.bin,
+#   firmware-guition-jc4880p443.bin
 #
 # FIRMWARE_VERSION in include/config.h must carry a pre-release suffix,
 # e.g. 0.23.0-beta.1. Panels with "Include beta releases" on pick it up.
@@ -29,7 +30,8 @@ fi
 rm -rf "$OUT"
 mkdir -p "$OUT"
 for pair in crowpanel_7_idf:firmware-crowpanel-s3-lcd7.bin \
-            waveshare-s3-lcd7:firmware-waveshare-s3-lcd7.bin; do
+            waveshare-s3-lcd7:firmware-waveshare-s3-lcd7.bin \
+            guition-jc4880p443:firmware-guition-jc4880p443.bin; do
   env="${pair%%:*}" asset="${pair#*:}"
   echo "Building ${env} (v${VERSION})..."
   "$PIO" run -e "$env"
