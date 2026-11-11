@@ -1,6 +1,6 @@
 {
   "name": "Digital Swatch System (Guition)",
-  "version": "0.23.1",
+  "version": "0.24.0",
   "new_install_prompt_erase": true,
   "builds": [
     {
