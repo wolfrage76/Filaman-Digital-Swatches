@@ -6,6 +6,7 @@
 
 #include <Arduino.h>
 #include <Wire.h>
+#include <esp_cache.h>
 #include <esp_heap_caps.h>
 #include <esp_lcd_panel_ops.h>
 #include <esp_lcd_panel_rgb.h>
@@ -21,6 +22,8 @@ constexpr int PANEL_W = 800;
 constexpr int PANEL_H = 480;
 
 // Proven SpoolmanScale timings: 14 MHz over 820x500 clocks ~34 fps.
+// Direct PSRAM scanout. Bounce buffers left this glass black while the
+// framebuffer still held a full picture; the DMA reads PSRAM, not the cache.
 constexpr uint32_t LCD_PCLK_HZ = 14000000;
 constexpr uint32_t LCD_HSYNC_PULSE = 4;
 constexpr uint32_t LCD_HSYNC_BACK = 8;
@@ -28,7 +31,6 @@ constexpr uint32_t LCD_HSYNC_FRONT = 8;
 constexpr uint32_t LCD_VSYNC_PULSE = 4;
 constexpr uint32_t LCD_VSYNC_BACK = 8;
 constexpr uint32_t LCD_VSYNC_FRONT = 8;
-constexpr size_t LCD_BOUNCE_LINES = 10;
 constexpr size_t LCD_DMA_BURST_BYTES = 64;
 
 constexpr unsigned long RELEASE_HOLD_MS = 45;
@@ -73,7 +75,7 @@ bool rgbBegin() {
   cfg.data_width = 16;
   cfg.bits_per_pixel = 16;
   cfg.num_fbs = 1;
-  cfg.bounce_buffer_size_px = PANEL_W * LCD_BOUNCE_LINES;
+  cfg.bounce_buffer_size_px = 0;
   cfg.dma_burst_size = LCD_DMA_BURST_BYTES;
   cfg.hsync_gpio_num = hw_pins::LCD_HSYNC;
   cfg.vsync_gpio_num = hw_pins::LCD_VSYNC;
@@ -103,6 +105,8 @@ bool rgbBegin() {
   }
   s_fb = static_cast<uint16_t *>(fb);
   memset(s_fb, 0, static_cast<size_t>(PANEL_W) * PANEL_H * sizeof(uint16_t));
+  esp_cache_msync(s_fb, static_cast<size_t>(PANEL_W) * PANEL_H * sizeof(uint16_t),
+                  ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
   esp_register_shutdown_handler(panelStop);
   return true;
 }
@@ -170,8 +174,8 @@ bool panelBegin() {
                 static_cast<unsigned>(LCD_PCLK_HZ / 1000000));
   }
   touchBegin();
-  if (lcd_ok) {
-    ch422g::write(hw_pins::EXIO_BACKLIGHT, true);
+  if (lcd_ok && !ch422g::write(hw_pins::EXIO_BACKLIGHT, true)) {
+    device_log("Panel: backlight expander write failed");
   }
   return lcd_ok;
 }
@@ -198,6 +202,7 @@ void panelBlitStrip(int32_t x, int32_t y, int32_t w, int32_t h, const uint16_t *
   if (y + h > PANEL_H) {
     h = PANEL_H - y;
   }
+  uint16_t *first = s_fb + y * PANEL_W + x;
   for (int32_t row = 0; row < h; ++row) {
     uint16_t *dst = s_fb + (y + row) * PANEL_W + x;
     const uint16_t *src = px + row * stride;
@@ -209,6 +214,9 @@ void panelBlitStrip(int32_t x, int32_t y, int32_t w, int32_t h, const uint16_t *
       }
     }
   }
+  const uint16_t *last = s_fb + (y + h - 1) * PANEL_W + x + w;
+  esp_cache_msync(first, static_cast<size_t>(last - first) * sizeof(uint16_t),
+                  ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
 }
 
 uint8_t panelTouchRead(PanelTouchPoint *points, uint8_t max_points) {

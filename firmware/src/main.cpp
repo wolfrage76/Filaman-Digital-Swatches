@@ -54,8 +54,10 @@ uint32_t maxLoopUs = 0;
 uint32_t maxLvglUs = 0;
 uint32_t maxNetUs = 0;
 
-// Offscreen draw buffers in internal SRAM. The Guition settings screen is one
-// full-frame paint; a taller buffer means fewer flushes for that paint.
+// One offscreen strip in internal SRAM. flushDisplay finishes the copy before
+// it returns, so a second buffer would never be drawn while the first flushes.
+// The Guition settings screen is one full-frame paint; a taller strip means
+// fewer flushes for that paint.
 #if defined(BOARD_GUITION_JC4880)
 constexpr int LVGL_BUF_LINES = 48;
 #else
@@ -66,7 +68,6 @@ lv_disp_draw_buf_t drawBuffer;
 lv_disp_drv_t displayDriver;
 lv_indev_drv_t inputDriver;
 lv_color_t *lvglBuf1 = nullptr;
-lv_color_t *lvglBuf2 = nullptr;
 
 unsigned long lastWifiAttempt = 0;
 unsigned long wifiBeginAt = 0;
@@ -165,12 +166,11 @@ void setupLvgl() {
 
   const size_t bufPixels = static_cast<size_t>(SCREEN_WIDTH) * LVGL_BUF_LINES;
   lvglBuf1 = allocDrawBuffer(bufPixels);
-  lvglBuf2 = allocDrawBuffer(bufPixels);
   if (!lvglBuf1) {
     device_log("LVGL draw buffer alloc failed");
     return;
   }
-  lv_disp_draw_buf_init(&drawBuffer, lvglBuf1, lvglBuf2, bufPixels);
+  lv_disp_draw_buf_init(&drawBuffer, lvglBuf1, nullptr, bufPixels);
 
   lv_disp_drv_init(&displayDriver);
   displayDriver.hor_res = SCREEN_WIDTH;
