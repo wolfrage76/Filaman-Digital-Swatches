@@ -182,6 +182,16 @@ bool panelBegin() {
 
 const uint16_t *panelFramebuffer() { return s_fb; }
 
+void panelSetUpdateMode(bool on) {
+  if (!s_panel) {
+    return;
+  }
+  const uint32_t hz = on ? LCD_PCLK_HZ / 2 : LCD_PCLK_HZ;
+  const esp_err_t err = esp_lcd_rgb_panel_set_pclk(s_panel, hz);
+  device_logf("Pixel clock %u Hz (%s): 0x%x", static_cast<unsigned>(hz),
+              on ? "update" : "normal", static_cast<unsigned>(err));
+}
+
 void panelStopScanout() { panelStop(); }
 
 void panelPresent() {}

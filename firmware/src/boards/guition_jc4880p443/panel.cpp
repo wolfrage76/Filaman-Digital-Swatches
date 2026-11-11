@@ -270,6 +270,8 @@ const uint16_t *panelFramebuffer() {
   return logical;
 }
 
+void panelSetUpdateMode(bool) {}
+
 void panelStopScanout() {
   ready = false;
   board_p4_display_stop();

@@ -47,6 +47,12 @@ void panelSetBrightness(uint8_t brightness);
 void panelBacklightOff();
 void panelBacklightOn(uint8_t brightness);
 
+// Slow the RGB pixel clock while flash is programmed. Octal PSRAM and flash
+// share a bus, so a full-rate scan shifts lines on the CrowPanel during a
+// GitHub update. Pass false to restore the normal clock. Panels that do not
+// scan a PSRAM framebuffer ignore this.
+void panelSetUpdateMode(bool on);
+
 // Stop RGB scanout for good (backlight off, driver deleted). The bounce-buffer
 // ISR copies from the PSRAM framebuffer and crashes with a CacheError if it
 // fires while the firmware remaps flash to verify a new image. Called just

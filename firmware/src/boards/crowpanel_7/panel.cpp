@@ -9,7 +9,11 @@
 #include <TAMC_GT911.h>
 #include <Wire.h>
 #include <cstring>
+#include <esp_arduino_version.h>
 #include <esp_lcd_panel_ops.h>
+#if ESP_ARDUINO_VERSION_MAJOR >= 3
+#include <esp_lcd_panel_rgb.h>
+#endif
 
 #include "soc/soc.h"
 #include "soc/usb_serial_jtag_reg.h"
@@ -29,6 +33,9 @@ constexpr unsigned long RELEASE_HOLD_MS = 45;
 constexpr unsigned long REPRESS_COOLDOWN_MS = 240;
 
 constexpr size_t BOUNCE_BUFFER_PX = static_cast<size_t>(SCREEN_WIDTH) * 10;
+// 15 MHz with a bounce buffer, 12 MHz for direct PSRAM scanout. The direct
+// rate is the one that lights this glass; updates halve it (see panelSetUpdateMode).
+constexpr uint32_t LCD_PCLK_HZ = DISPLAY_USE_BOUNCE_BUFFER ? 15000000 : 12000000;
 
 #if DISPLAY_USE_BOUNCE_BUFFER
 Arduino_ESP32RGBPanel *bus = new Arduino_ESP32RGBPanel(
@@ -38,7 +45,7 @@ Arduino_ESP32RGBPanel *bus = new Arduino_ESP32RGBPanel(
     15 /* B0 */, 7 /* B1 */, 6 /* B2 */, 5 /* B3 */, 4 /* B4 */,
     0 /* hsync_polarity */, 40 /* hsync_front_porch */, 48 /* hsync_pulse_width */, 40 /* hsync_back_porch */,
     0 /* vsync_polarity */, 1 /* vsync_front_porch */, 31 /* vsync_pulse_width */, 13 /* vsync_back_porch */,
-    1 /* pclk_active_neg */, 15000000 /* prefer_speed */,
+    1 /* pclk_active_neg */, LCD_PCLK_HZ /* prefer_speed */,
     false /* useBigEndian */, 0 /* de_idle_high */, 0 /* pclk_idle_high */,
     BOUNCE_BUFFER_PX);
 #else
@@ -49,7 +56,7 @@ Arduino_ESP32RGBPanel *bus = new Arduino_ESP32RGBPanel(
     15 /* B0 */, 7 /* B1 */, 6 /* B2 */, 5 /* B3 */, 4 /* B4 */,
     0 /* hsync_polarity */, 40 /* hsync_front_porch */, 48 /* hsync_pulse_width */, 40 /* hsync_back_porch */,
     0 /* vsync_polarity */, 1 /* vsync_front_porch */, 31 /* vsync_pulse_width */, 13 /* vsync_back_porch */,
-    1 /* pclk_active_neg */, 12000000 /* prefer_speed */);
+    1 /* pclk_active_neg */, LCD_PCLK_HZ /* prefer_speed */);
 #endif
 
 Arduino_RGB_Display *gfx =
@@ -232,6 +239,24 @@ const uint16_t *panelFramebuffer() {
 void panelPresent() {}
 
 void panelPoll() {}
+
+void panelSetUpdateMode(bool on) {
+#if ESP_ARDUINO_VERSION_MAJOR >= 3
+  // panelHandle() is added to Arduino_GFX by patch_bounce.py (Arduino 3 envs).
+  // The new clock is applied on the next VSYNC, before the first flash erase.
+  if (!bus || scanoutStopped) {
+    return;
+  }
+  const uint32_t hz = on ? LCD_PCLK_HZ / 2 : LCD_PCLK_HZ;
+  if (esp_lcd_panel_handle_t handle = bus->panelHandle()) {
+    const esp_err_t err = esp_lcd_rgb_panel_set_pclk(handle, hz);
+    device_logf("Pixel clock %u Hz (%s): 0x%x", static_cast<unsigned>(hz),
+                on ? "update" : "normal", static_cast<unsigned>(err));
+  }
+#else
+  (void)on;
+#endif
+}
 
 void panelStopScanout() {
   panelBacklightOff();

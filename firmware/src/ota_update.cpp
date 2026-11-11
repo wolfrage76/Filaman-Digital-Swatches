@@ -566,15 +566,21 @@ bool ota_install_github_update(const String &downloadUrl,
     return false;
   }
 
+  // Halve the pixel clock before the first erase. The progress paint (or the
+  // short wait) lets one VSYNC apply it. Octal PSRAM and flash share a bus;
+  // a full-rate scan shifts lines on the 7" CrowPanel for the whole write.
+  panelSetUpdateMode(true);
+  if (onProgress) {
+    onProgress(0);
+  }
+  delay(80);  // one or two frames, so VSYNC applies the slower clock before the erase
+
   if (!Update.begin(totalLen > 0 ? static_cast<size_t>(totalLen) : UPDATE_SIZE_UNKNOWN, U_FLASH)) {
+    panelSetUpdateMode(false);
     http.end();
     active = false;
     errorOut = String("Update.begin: ") + Update.errorString();
     return false;
-  }
-
-  if (onProgress) {
-    onProgress(0);
   }
 
   boardImageScanBegin();
@@ -594,6 +600,7 @@ bool ota_install_github_update(const String &downloadUrl,
         if (Update.write(buf, static_cast<size_t>(readBytes)) != static_cast<size_t>(readBytes)) {
           Update.abort();
           http.end();
+          panelSetUpdateMode(false);
           active = false;
           errorOut = String("Flash write: ") + Update.errorString();
           return false;
@@ -612,6 +619,7 @@ bool ota_install_github_update(const String &downloadUrl,
       if (millis() - lastDataMs > 15000) {
         Update.abort();
         http.end();
+        panelSetUpdateMode(false);
         active = false;
         errorOut = "Download timed out";
         return false;
@@ -625,6 +633,7 @@ bool ota_install_github_update(const String &downloadUrl,
 
   if (written < 200000) {
     Update.abort();
+    panelSetUpdateMode(false);
     active = false;
     errorOut = "Download incomplete";
     return false;
@@ -632,12 +641,14 @@ bool ota_install_github_update(const String &downloadUrl,
 
   if (!boardImageScanAccepts()) {
     Update.abort();
+    panelSetUpdateMode(false);
     active = false;
     errorOut = String("Wrong board image (need ") + BOARD_OTA_ASSET + ")";
     return false;
   }
 
   if (!Update.end(true) || !Update.isFinished()) {
+    panelSetUpdateMode(false);
     active = false;
     errorOut = String("Verify failed: ") + Update.errorString();
     return false;
@@ -664,6 +675,8 @@ void ota_begin() {
 
   ArduinoOTA.onStart([]() {
     active = true;
+    panelSetUpdateMode(true);
+    delay(80);
     ui_set_connection_status("OTA updating...");
     device_log("OTA start");
   });
@@ -674,6 +687,7 @@ void ota_begin() {
   });
   ArduinoOTA.onError([](ota_error_t error) {
     active = false;
+    panelSetUpdateMode(false);
     String msg = "OTA error ";
     msg += String(static_cast<int>(error));
     ui_set_connection_status(msg);
