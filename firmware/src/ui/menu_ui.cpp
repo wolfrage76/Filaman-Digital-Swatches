@@ -24,23 +24,23 @@
 
 namespace {
 
-// Filament-swatch console: deep ink panels, mint accent, soft radii.
-constexpr uint32_t COL_BG = 0x070A0F;
-constexpr uint32_t COL_SURFACE = 0x111823;
-constexpr uint32_t COL_SURFACE_2 = 0x151F2D;
-constexpr uint32_t COL_INSET = 0x0B1017;
-constexpr uint32_t COL_BORDER = 0x222F42;
-constexpr uint32_t COL_BORDER_SOFT = 0x1A2433;
-constexpr uint32_t COL_TEXT = 0xEEF2F7;
-constexpr uint32_t COL_MUTED = 0x8A99AD;
-constexpr uint32_t COL_DIM = 0x59687B;
+// Same charcoal and mint as the swatch board, so the menu is the same instrument.
+constexpr uint32_t COL_BG = 0x0A0E14;
+constexpr uint32_t COL_SURFACE = 0x121820;
+constexpr uint32_t COL_SURFACE_2 = 0x182028;
+constexpr uint32_t COL_INSET = 0x0D1219;
+constexpr uint32_t COL_BORDER = 0x2A3544;
+constexpr uint32_t COL_BORDER_SOFT = 0x1E2834;
+constexpr uint32_t COL_TEXT = 0xF2F5F8;
+constexpr uint32_t COL_MUTED = 0x8B98A8;
+constexpr uint32_t COL_DIM = 0x5C6B7A;
 constexpr uint32_t COL_ACCENT = 0x3DDC97;
-constexpr uint32_t COL_ACCENT_DIM = 0x15261F;
-constexpr uint32_t COL_WARN = 0xFFB443;
+constexpr uint32_t COL_ACCENT_DIM = 0x13261D;
+constexpr uint32_t COL_WARN = 0xFFB020;
 constexpr uint32_t COL_DANGER = 0xFF5C6A;
-constexpr lv_coord_t kRadiusCard = 12;
-constexpr lv_coord_t kRadiusCtl = 10;
-constexpr lv_coord_t kRadiusChip = 8;
+constexpr lv_coord_t kRadiusCard = 8;
+constexpr lv_coord_t kRadiusCtl = 8;
+constexpr lv_coord_t kRadiusChip = 4;
 
 enum class Pane { Home, Filaman, Mqtt, Device, Display, Update, System };
 
@@ -180,8 +180,8 @@ lv_obj_t *makeCard(lv_obj_t *parent) {
   lv_obj_set_style_border_width(card, 1, 0);
   lv_obj_set_style_border_color(card, lv_color_hex(COL_BORDER), 0);
   lv_obj_set_style_radius(card, kRadiusCard, 0);
-  lv_obj_set_style_pad_all(card, 14, 0);
-  lv_obj_set_style_pad_row(card, 10, 0);
+  lv_obj_set_style_pad_all(card, 10, 0);
+  lv_obj_set_style_pad_row(card, 8, 0);
   lv_obj_set_style_clip_corner(card, true, 0);
   lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
   return card;
@@ -194,11 +194,6 @@ void addCardHeader(lv_obj_t *card, const char *title, const char *subtitle) {
   lv_obj_set_height(wrap, LV_SIZE_CONTENT);
   lv_obj_set_flex_flow(wrap, LV_FLEX_FLOW_COLUMN);
   lv_obj_set_style_pad_row(wrap, 2, 0);
-  lv_obj_set_style_pad_bottom(wrap, 4, 0);
-  lv_obj_set_style_border_side(wrap, LV_BORDER_SIDE_BOTTOM, 0);
-  lv_obj_set_style_border_width(wrap, 1, 0);
-  lv_obj_set_style_border_color(wrap, lv_color_hex(COL_BORDER_SOFT), 0);
-  lv_obj_set_style_pad_bottom(wrap, 10, 0);
   lv_obj_clear_flag(wrap, LV_OBJ_FLAG_SCROLLABLE);
 
   lv_obj_t *t = lv_label_create(wrap);
@@ -306,15 +301,6 @@ lv_obj_t *makeToggleAction(lv_obj_t *parent, bool on, lv_event_cb_t cb) {
     lv_obj_add_event_cb(btn, cb, LV_EVENT_CLICKED, nullptr);
   }
   return btn;
-}
-
-void addSection(lv_obj_t *parent, const char *text) {
-  lv_obj_t *lbl = lv_label_create(parent);
-  lv_obj_set_style_text_font(lbl, &lv_font_montserrat_12, 0);
-  lv_obj_set_style_text_color(lbl, lv_color_hex(COL_ACCENT), 0);
-  lv_obj_set_style_text_letter_space(lbl, 1, 0);
-  lv_obj_set_style_pad_top(lbl, 4, 0);
-  lv_label_set_text(lbl, text);
 }
 
 lv_obj_t *makeMenuRow(lv_obj_t *parent, lv_coord_t height) {
@@ -482,7 +468,7 @@ lv_obj_t *makeMenuTile(lv_obj_t *parent, MenuIcon iconKind, const char *label, b
   lv_obj_set_flex_grow(btn, 1);
   lv_obj_set_width(btn, 0);
   lv_obj_set_height(btn, lv_pct(100));
-  lv_obj_set_style_radius(btn, 14, 0);
+  lv_obj_set_style_radius(btn, kRadiusCard, 0);
   lv_obj_set_style_bg_color(btn, lv_color_hex(emphasize ? COL_ACCENT_DIM : COL_SURFACE), 0);
   lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
   lv_obj_set_style_bg_color(btn, lv_color_hex(emphasize ? 0x1C3228 : COL_SURFACE_2), LV_STATE_PRESSED);
@@ -533,6 +519,65 @@ lv_obj_t *makeMenuTile(lv_obj_t *parent, MenuIcon iconKind, const char *label, b
 
   if (cb) {
     lv_obj_add_event_cb(btn, cb, LV_EVENT_CLICKED, ud);
+  }
+  return btn;
+}
+
+// Settings are a list, not a second set of destination tiles. The icon stays
+// mint, the label is the thing you read, and the chevron says it opens.
+lv_obj_t *makeSetting(lv_obj_t *parent, MenuIcon iconKind, const char *label, bool badge,
+                      lv_event_cb_t cb) {
+  lv_obj_t *btn = lv_btn_create(parent);
+  lv_obj_set_flex_grow(btn, 1);
+  lv_obj_set_width(btn, 0);
+  lv_obj_set_height(btn, lv_pct(100));
+  lv_obj_set_style_radius(btn, kRadiusCard, 0);
+  lv_obj_set_style_bg_color(btn, lv_color_hex(COL_SURFACE), 0);
+  lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
+  lv_obj_set_style_bg_color(btn, lv_color_hex(COL_SURFACE_2), LV_STATE_PRESSED);
+  lv_obj_set_style_border_width(btn, 1, 0);
+  lv_obj_set_style_border_color(btn, lv_color_hex(COL_BORDER), 0);
+  lv_obj_set_style_shadow_width(btn, 0, 0);
+  lv_obj_set_style_pad_hor(btn, 12, 0);
+  lv_obj_set_flex_flow(btn, LV_FLEX_FLOW_ROW);
+  lv_obj_set_flex_align(btn, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_style_pad_column(btn, 8, 0);
+  lv_obj_clear_flag(btn, LV_OBJ_FLAG_SCROLLABLE);
+
+  if (badge) {
+    lv_obj_t *dot = lv_obj_create(btn);
+    lv_obj_remove_style_all(dot);
+    lv_obj_set_size(dot, 10, 10);
+    lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(dot, lv_color_hex(COL_ACCENT), 0);
+    lv_obj_set_style_bg_opa(dot, LV_OPA_COVER, 0);
+    lv_obj_clear_flag(dot, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(dot, LV_OBJ_FLAG_FLOATING);
+    lv_obj_align(dot, LV_ALIGN_TOP_RIGHT, -8, 8);
+  }
+
+  lv_obj_t *icon = lv_obj_create(btn);
+  lv_obj_remove_style_all(icon);
+  lv_obj_set_size(icon, 26, 26);
+  lv_obj_set_user_data(icon, reinterpret_cast<void *>(static_cast<intptr_t>(iconKind)));
+  lv_obj_add_event_cb(icon, menuIconDraw, LV_EVENT_DRAW_MAIN, nullptr);
+  lv_obj_clear_flag(icon, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+
+  lv_obj_t *lbl = lv_label_create(btn);
+  lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_color(lbl, lv_color_hex(COL_TEXT), 0);
+  lv_label_set_long_mode(lbl, LV_LABEL_LONG_DOT);
+  lv_obj_set_flex_grow(lbl, 1);
+  lv_obj_set_width(lbl, 0);
+  lv_label_set_text(lbl, label);
+
+  lv_obj_t *chev = lv_label_create(btn);
+  lv_obj_set_style_text_font(chev, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_color(chev, lv_color_hex(COL_DIM), 0);
+  lv_label_set_text(chev, LV_SYMBOL_RIGHT);
+
+  if (cb) {
+    lv_obj_add_event_cb(btn, cb, LV_EVENT_CLICKED, nullptr);
   }
   return btn;
 }
@@ -839,8 +884,8 @@ void showHome() {
   lv_obj_set_style_pad_row(col, 10, 0);
   lv_obj_clear_flag(col, LV_OBJ_FLAG_SCROLLABLE);
 
-  addSection(col, "SCREENS");
-  lv_obj_t *screens = makeMenuRow(col, 86);
+  // Screens are the reason the menu exists. Settings sit under them as a list.
+  lv_obj_t *screens = makeMenuRow(col, 118);
   makeMenuTile(screens, MenuIcon::Printer, "Print Status", true, false, onScreen,
                reinterpret_cast<void *>(static_cast<intptr_t>(STATUS_PAGE)));
   makeMenuTile(screens, MenuIcon::Ams, "AMS View", true, false, onScreen,
@@ -848,33 +893,29 @@ void showHome() {
   makeMenuTile(screens, MenuIcon::Alert, "Alerts", true, false, onScreen,
                reinterpret_cast<void *>(static_cast<intptr_t>(ALERTS_PAGE)));
 
-  addSection(col, "CONFIGURATION");
   lv_obj_t *cfg = lv_obj_create(col);
   lv_obj_remove_style_all(cfg);
   lv_obj_set_width(cfg, lv_pct(100));
   lv_obj_set_flex_grow(cfg, 1);
   lv_obj_set_style_min_height(cfg, 0, 0);
   lv_obj_set_flex_flow(cfg, LV_FLEX_FLOW_COLUMN);
-  lv_obj_set_style_pad_row(cfg, 10, 0);
+  lv_obj_set_style_pad_row(cfg, 8, 0);
   lv_obj_clear_flag(cfg, LV_OBJ_FLAG_SCROLLABLE);
 
-  lv_obj_t *row1 = makeMenuRow(cfg, 0);
-  makeMenuTile(row1, MenuIcon::Printer, "Select Printer", false, false, onPrinter, nullptr);
-  makeMenuTile(row1, MenuIcon::Wifi, "WiFi", false, false, onWifi, nullptr);
-  makeMenuTile(row1, MenuIcon::Filaman, "FilaMan", false, false,
-               [](lv_event_t *) { showFilaman(); }, nullptr);
-  makeMenuTile(row1, MenuIcon::Mqtt, "MQTT", false, false,
-               [](lv_event_t *) { showMqtt(); }, nullptr);
-
-  lv_obj_t *row2 = makeMenuRow(cfg, 0);
-  makeMenuTile(row2, MenuIcon::Display, "Display", false, false,
-               [](lv_event_t *) { showDisplay(); }, nullptr);
-  makeMenuTile(row2, MenuIcon::Device, "Device", false, false,
-               [](lv_event_t *) { showDevice(); }, nullptr);
-  makeMenuTile(row2, MenuIcon::Update, "Update", false, updateBadgeVisible(),
-               [](lv_event_t *) { showUpdate(); }, nullptr);
-  makeMenuTile(row2, MenuIcon::System, "System", false, false,
-               [](lv_event_t *) { showSystem(); }, nullptr);
+  auto settingRow = [&]() { return makeMenuRow(cfg, 52); };
+  lv_obj_t *row1 = settingRow();
+  makeSetting(row1, MenuIcon::Printer, "Select Printer", false, onPrinter);
+  makeSetting(row1, MenuIcon::Wifi, "Wi-Fi", false, onWifi);
+  lv_obj_t *row2 = settingRow();
+  makeSetting(row2, MenuIcon::Filaman, "FilaMan", false, [](lv_event_t *) { showFilaman(); });
+  makeSetting(row2, MenuIcon::Mqtt, "MQTT", false, [](lv_event_t *) { showMqtt(); });
+  lv_obj_t *row3 = settingRow();
+  makeSetting(row3, MenuIcon::Display, "Display", false, [](lv_event_t *) { showDisplay(); });
+  makeSetting(row3, MenuIcon::Device, "Device", false, [](lv_event_t *) { showDevice(); });
+  lv_obj_t *row4 = settingRow();
+  makeSetting(row4, MenuIcon::Update, "Update", updateBadgeVisible(),
+              [](lv_event_t *) { showUpdate(); });
+  makeSetting(row4, MenuIcon::System, "System", false, [](lv_event_t *) { showSystem(); });
 }
 
 void showFilaman() {
@@ -1122,7 +1163,7 @@ void addTimeoutRow(lv_obj_t *parent, const char *caption, const char *hint, bool
   lv_obj_t *row = lv_obj_create(parent);
   lv_obj_remove_style_all(row);
   lv_obj_set_width(row, lv_pct(100));
-  lv_obj_set_height(row, 42);
+  lv_obj_set_height(row, 44);
   lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
   lv_obj_set_style_pad_column(row, 6, 0);
   lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
@@ -1145,7 +1186,7 @@ void addTimeoutRow(lv_obj_t *parent, const char *caption, const char *hint, bool
     const int minutes = choices[i];
     lv_obj_t *btn = lv_btn_create(row);
     lv_obj_set_flex_grow(btn, 1);
-    lv_obj_set_height(btn, 42);
+    lv_obj_set_height(btn, 44);
     lv_obj_set_style_pad_all(btn, 0, 0);
     lv_obj_set_user_data(btn, reinterpret_cast<void *>(static_cast<intptr_t>(minutes)));
     lv_obj_add_event_cb(btn, onChoicePicked, LV_EVENT_CLICKED,
@@ -1169,7 +1210,7 @@ void addChoiceRow(lv_obj_t *parent, const char *caption, const char *hint, const
   lv_obj_t *row = lv_obj_create(parent);
   lv_obj_remove_style_all(row);
   lv_obj_set_width(row, lv_pct(100));
-  lv_obj_set_height(row, 42);
+  lv_obj_set_height(row, 44);
   lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
   lv_obj_set_style_pad_column(row, 6, 0);
   lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
@@ -1186,7 +1227,7 @@ void addChoiceRow(lv_obj_t *parent, const char *caption, const char *hint, const
   for (int i = 0; i < count; ++i) {
     lv_obj_t *btn = lv_btn_create(row);
     lv_obj_set_flex_grow(btn, 1);
-    lv_obj_set_height(btn, 42);
+    lv_obj_set_height(btn, 44);
     lv_obj_set_style_pad_all(btn, 0, 0);
     lv_obj_set_user_data(btn, reinterpret_cast<void *>(static_cast<intptr_t>(values[i])));
     lv_obj_add_event_cb(btn, onChoicePicked, LV_EVENT_CLICKED,
@@ -1440,7 +1481,7 @@ void showUpdate() {
     lv_label_set_text(e, eyebrow);
 
     lv_obj_t *v = lv_label_create(cell);
-    lv_obj_set_style_text_font(v, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_font(v, &lv_font_montserrat_22, 0);
     lv_obj_set_style_text_color(v, lv_color_hex(COL_TEXT), 0);
     lv_label_set_text(v, ver);
   };
@@ -1513,7 +1554,7 @@ void addStatLine(lv_obj_t *parent, const char *label, const String &val) {
   lv_label_set_text(k, label);
 
   lv_obj_t *v = lv_label_create(row);
-  lv_obj_set_style_text_font(v, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_font(v, &lv_font_montserrat_16, 0);
   lv_obj_set_style_text_color(v, lv_color_hex(COL_TEXT), 0);
   lv_obj_set_style_text_align(v, LV_TEXT_ALIGN_RIGHT, 0);
   lv_label_set_long_mode(v, LV_LABEL_LONG_DOT);
@@ -1637,7 +1678,7 @@ void menu_begin() {
   lv_obj_set_style_bg_opa(backBtn, LV_OPA_COVER, 0);
   lv_obj_set_style_border_width(backBtn, 1, 0);
   lv_obj_set_style_border_color(backBtn, lv_color_hex(COL_BORDER), 0);
-  lv_obj_set_style_radius(backBtn, 10, 0);
+  lv_obj_set_style_radius(backBtn, kRadiusCtl, 0);
   lv_obj_set_style_shadow_width(backBtn, 0, 0);
   lv_obj_set_style_pad_all(backBtn, 0, 0);
   lv_obj_set_ext_click_area(backBtn, 10);
@@ -1669,7 +1710,7 @@ void menu_begin() {
   lv_obj_set_style_bg_color(closeBtn, lv_color_hex(COL_SURFACE_2), 0);
   lv_obj_set_style_border_width(closeBtn, 1, 0);
   lv_obj_set_style_border_color(closeBtn, lv_color_hex(COL_BORDER), 0);
-  lv_obj_set_style_radius(closeBtn, 10, 0);
+  lv_obj_set_style_radius(closeBtn, kRadiusCtl, 0);
   lv_obj_add_event_cb(closeBtn, onCloseClicked, LV_EVENT_CLICKED, nullptr);
   lv_obj_t *xl = lv_label_create(closeBtn);
   lv_obj_set_style_text_color(xl, lv_color_hex(COL_TEXT), 0);

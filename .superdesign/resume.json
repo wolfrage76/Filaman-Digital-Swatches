@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "targets": {
+    "ams-view": {
+      "targetKind": "existing-ui",
+      "projectId": "63e8bd74-fce2-435c-99ea-0bb97355dbf1",
+      "baselineDraftId": "b1d602db-366d-49d5-a6c3-6ce6a7b84cf6",
+      "activeDraftId": "b1d602db-366d-49d5-a6c3-6ce6a7b84cf6",
+      "designSystemPath": ".superdesign/design-system.md",
+      "referenceIds": ["65d04060-1c2f-46e9-9a67-9da0a47b06cc"],
+      "contextFiles": [
+        ".superdesign/design-system.md",
+        ".superdesign/init/theme.md"
+      ],
+      "fingerprints": {
+        ".superdesign/design-system.md": "66c6f10075f31520282b24446dea612cf91009abf7d0bddf786c2d646af605eb",
+        ".superdesign/init/theme.md": "e442a4dd2752e6d6a5b9ae294ec4344c523b832daa26a0b040efb267325ff57a"
+      },
+      "drafts": {
+        "b1d602db-366d-49d5-a6c3-6ce6a7b84cf6": {
+          "title": "AMS View Panel - Improved Layout",
+          "visualDirection": "charcoal instrument board, grams lead",
+          "currentVersion": 2
+        }
+      },
+      "updatedAt": "2026-11-11T01:40:00Z"
+    }
+  }
+}

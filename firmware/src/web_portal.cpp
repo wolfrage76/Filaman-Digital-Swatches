@@ -106,7 +106,8 @@ String pwField(const char *label, const char *name, const char *hint = nullptr) 
 // stored values to these presets on load, so one option is always checked.
 String choiceField(const char *label, const char *hint, const char *name, const int *values,
                    const char *const *labels, int count, int current) {
-  String h = "<div class='field'><span class='field-label'>";
+  (void)hint;
+  String h = "<div class='set-row'><span class='field-label'>";
   h += label;
   h += "</span><div class='seg' role='radiogroup'>";
   for (int i = 0; i < count; ++i) {
@@ -122,21 +123,14 @@ String choiceField(const char *label, const char *hint, const char *name, const 
     h += labels[i];
     h += "</span></label>";
   }
-  h += "</div>";
-  if (hint && hint[0]) {
-    h += "<span class='field-hint'>";
-    h += hint;
-    h += "</span>";
-  }
-  h += "</div>";
+  h += "</div></div>";
   return h;
 }
 
 String timezoneField(const String &current) {
   const int sel = timezone_index(current);
-  String h =
-      "<div class='field'><label class='field-label' for='f_tzPreset'>Time zone</label>"
-      "<select id='f_tzPreset' name='tzPreset'>";
+  String h = "<div class='set-row'><label class='field-label' for='f_tzPreset'>Time zone</label>"
+             "<select id='f_tzPreset' name='tzPreset'>";
   if (sel < 0) {
     // A rule from secrets.h or an older firmware: keep it until a place is picked.
     h += "<option value='' selected>Keep current setting</option>";
@@ -152,8 +146,7 @@ String timezoneField(const String &current) {
     h += kTimezones[i].label;
     h += "</option>";
   }
-  h += "</select><span class='field-hint'>Pick the place nearest you. "
-       "Daylight saving is handled automatically.</span></div>";
+  h += "</select></div>";
   return h;
 }
 
@@ -196,12 +189,12 @@ String toggleField(const char *title, const char *subtitle, const char *name, bo
 
 String footerLinks() {
   return F(
-      "<style>.links{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;"
-      "margin-top:18px}"
+      "<style>.links{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;"
+      "margin-top:20px}"
       ".links a{display:flex;align-items:center;justify-content:center;gap:8px;"
-      "padding:11px 8px;border-radius:9px;text-decoration:none;font-size:13px;font-weight:600;"
-      "background:#111823;color:#c7d2e0;border:1px solid #222f42;transition:background .14s}"
-      ".links a:hover{background:#18222f}"
+      "padding:12px 8px;border-radius:8px;text-decoration:none;font-size:14px;font-weight:500;"
+      "background:#121820;color:#f2f5f8;border:1px solid #2a3544}"
+      ".links a:hover{border-color:#3ddc97;color:#3ddc97}"
       ".links svg{width:15px;height:15px;flex:none;fill:currentColor}</style>"
       "<footer class='links'>"
       "<a href='" PROJECT_GITHUB_URL "' target='_blank' rel='noopener'>" FOOT_SVG
@@ -230,16 +223,14 @@ void sendStatusPage(int httpCode, const char *badge, const String &title, const 
   h += ";url=/'><title>";
   h += title;
   h += " - Digital Swatch System</title><style>"
-       ":root{--bg:#070a0f;--card:#10161f;--border:#222e3e;--text:#eef2f7;--muted:#8a99ad;"
+       ":root{--bg:#0a0e14;--card:#121820;--border:#2a3544;--text:#f2f5f8;--muted:#8b98a8;"
        "--accent:#3ddc97;--danger:#ff5c6a}"
        "*{box-sizing:border-box}body{margin:0;min-height:100vh;display:flex;align-items:center;"
-       "justify-content:center;padding:24px;font-family:'Inter',-apple-system,BlinkMacSystemFont,"
-       "'Segoe UI',system-ui,sans-serif;background:radial-gradient(ellipse 80% 50% at 50% -10%,"
-       "rgba(61,220,151,.12),transparent),var(--bg);color:var(--text)}"
+       "justify-content:center;padding:24px;font-family:system-ui,sans-serif;"
+       "background:var(--bg);color:var(--text)}"
        ".box{max-width:440px;width:100%;background:var(--card);border:1px solid ";
   h += isError ? "rgba(255,92,106,.45)" : "rgba(61,220,151,.38)";
-  h += ";border-radius:14px;padding:28px 26px;box-shadow:0 20px 50px rgba(0,0,0,.55);"
-       "text-align:left}"
+  h += ";border-radius:8px;padding:28px 26px;text-align:left}"
        ".pill{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;"
        "letter-spacing:.08em;text-transform:uppercase;padding:4px 10px;border-radius:999px;"
        "background:";
@@ -288,232 +279,142 @@ void handleRoot() {
   h.reserve(48000);
   h += "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-       "<title>Digital Swatch System · Console</title><style>"
-       ":root{"
-       "--bg:#070a0f;--bg-elev:#0d131c;--card:#111823;--card-2:#151f2d;"
-       "--border:#222f42;--border-soft:#1a2433;--text:#eef2f7;--muted:#8a99ad;--dim:#59687b;"
-       "--accent:#3ddc97;--accent-hover:#54e6a6;--accent-soft:rgba(61,220,151,.12);"
-       "--info:#5aa7ff;--warn:#ffb443;--danger:#ff5c6a;"
-       "--radius:12px;--mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}"
-       "*{box-sizing:border-box}"
-       "body{margin:0;padding:0;background:radial-gradient(ellipse 90% 45% at 50% -10%,"
-       "rgba(61,220,151,.10),transparent 70%),var(--bg);color:var(--text);"
-       "font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;"
-       "font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}"
-       ".shell{max-width:1020px;margin:0 auto;padding:24px 18px 56px}"
-       /* Top Header */
-       ".topbar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;"
-       "gap:16px;padding:18px 22px;background:rgba(17,24,35,.88);border:1px solid var(--border);"
-       "border-radius:14px;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 14px 34px rgba(0,0,0,.35);"
-       "margin-bottom:18px}"
-       ".brand{display:flex;align-items:center;gap:14px}"
-       ".swatch-mark{display:grid;grid-template-columns:repeat(4,6px);gap:3px;padding:7px;"
-       "background:#0a0f16;border:1px solid var(--border);border-radius:10px;height:40px;align-items:stretch}"
-       ".swatch-mark span{display:block;border-radius:2px}"
-       ".sm-1{background:#3ddc97}.sm-2{background:#5aa7ff}.sm-3{background:#ffb443}.sm-4{background:#ff5c6a}"
-       ".brand-title{margin:0;font-size:18px;font-weight:700;letter-spacing:-.02em;color:var(--text)}"
-       ".brand-sub{margin:2px 0 0;font-size:12px;color:var(--muted)}"
-       ".telemetry{display:flex;flex-wrap:wrap;align-items:center;gap:8px}"
-       ".chip{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;"
-       "background:var(--bg-elev);border:1px solid var(--border);border-radius:999px;"
-       "font-size:12px;color:var(--muted);font-family:var(--mono);font-variant-numeric:tabular-nums}"
-       ".chip strong{color:var(--text);font-weight:600}"
-       ".dot{width:7px;height:7px;border-radius:50%;background:var(--accent);"
-       "box-shadow:0 0 8px var(--accent)}"
-       ".dot-warn{background:var(--warn);box-shadow:0 0 8px var(--warn)}"
-       ".tabs{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 22px;padding:5px;background:#0b1017;"
-       "border:1px solid var(--border-soft);border-radius:10px;width:fit-content;max-width:100%}"
-       ".tab{padding:7px 13px;border-radius:6px;color:var(--muted);font-size:12px;font-weight:650;"
-       "text-decoration:none;transition:background .15s,color .15s}"
-       ".tab:hover{color:var(--text);background:var(--card-2)}"
-       ".tab.active{color:#07120d;background:var(--accent)}"
-       ".tabs-on .panel{display:none}"
-       ".tabs-on #panel-status{display:block}"
-       ".tabs-on .panel.on{display:block}"
-       ".tabs-on.hide-status #panel-status{display:none}"
-       ".tabs-on #saveBar{display:none}"
-       ".tabs-on.save-on #saveBar{display:flex}"
-       ".panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;"
-       "margin:0 2px 12px}"
-       ".panel-head .band-lead{margin:0}"
-       ".host-line{display:flex;align-items:stretch}"
-       ".host-line input{border-top-right-radius:0;border-bottom-right-radius:0}"
-       ".host-line input:focus{box-shadow:none}"
-       ".host-suffix{display:flex;align-items:center;padding:0 12px;border:1px solid var(--border);"
-       "border-left:0;border-radius:0 8px 8px 0;background:#0b1017;color:var(--muted);"
-       "font-family:var(--mono);font-size:13px;white-space:nowrap}"
-       ".host-line.solo input{border-radius:8px}"
-       ".host-line.solo .host-suffix{display:none}"
-       ".host-line:focus-within input,.host-line:focus-within .host-suffix{border-color:var(--accent)}"
-       ".host-line:focus-within{box-shadow:0 0 0 3px rgba(61,220,151,.15);border-radius:8px}"
-       ".metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:0 0 16px}"
-       "@media(min-width:760px){.metrics{grid-template-columns:repeat(4,minmax(0,1fr))}}"
-       ".metric{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px;"
-       "box-shadow:inset 0 1px 0 rgba(255,255,255,.03)}"
-       ".metric span{display:block;color:var(--dim);font-size:10px;font-weight:700;letter-spacing:.09em;"
-       "text-transform:uppercase;margin-bottom:6px}"
-       ".metric strong{font:600 16px var(--mono);color:var(--text)}"
-       ".diag-grid{display:grid;grid-template-columns:1fr;gap:16px;margin-top:16px}"
-       "@media(min-width:760px){.diag-grid{grid-template-columns:minmax(0,1.65fr) minmax(260px,.7fr)}}"
-       ".actions{display:flex;flex-wrap:wrap;gap:8px}"
-       ".btn-danger{color:#ff9ca5;border-color:rgba(255,92,106,.45);background:transparent}"
-       ".btn-danger:hover{background:rgba(255,92,106,.08)}"
-       "#log{height:360px;margin:0;padding:14px;overflow:auto;background:#070b10;"
-       "border:1px solid var(--border-soft);border-radius:8px;color:#b9c8d9;"
-       "font:11px/1.55 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere}"
-       ".shot{aspect-ratio:5/3;border:1px solid var(--border-soft);border-radius:9px;margin-bottom:13px;"
-       "background:linear-gradient(135deg,#0c131c,#152335);display:flex;align-items:center;"
-       "justify-content:center;color:var(--dim);font:12px var(--mono);text-align:center;padding:20px}"
-       ".note{color:var(--muted);font-size:11px;line-height:1.5;margin:10px 0 0}"
-       /* Security Banner */
-       ".banner-warn{display:flex;align-items:center;justify-content:space-between;gap:12px;"
-       "padding:13px 18px;margin-bottom:26px;border-radius:11px;"
-       "background:linear-gradient(90deg,rgba(255,92,106,.14),rgba(255,180,67,.08));"
-       "border:1px solid rgba(255,92,106,.4);color:#ffd5d9;font-size:13px}"
-       ".banner-warn strong{color:#fff;font-weight:650}"
-       /* Layout Grids */
-       ".grid-2{display:grid;grid-template-columns:1fr;gap:16px;margin-bottom:18px}"
-       "@media(min-width:760px){.grid-2{grid-template-columns:repeat(2,minmax(0,1fr))}}"
-       ".row-2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}"
-       /* Cards */
-       ".card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);"
-       "padding:20px 22px;box-shadow:inset 0 1px 0 rgba(255,255,255,.03),0 8px 24px rgba(0,0,0,.25)}"
-       ".card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;"
-       "margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border-soft)}"
-       ".card-eyebrow{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;"
-       "color:var(--accent);margin-bottom:3px;display:block}"
-       ".card-title{margin:0;font-size:16px;font-weight:650;color:var(--text);letter-spacing:-.01em}"
-       ".card-desc{margin:3px 0 0;font-size:12px;color:var(--muted)}"
-       ".card-badge{font-family:var(--mono);font-size:11px;font-weight:600;padding:3px 9px;"
-       "border-radius:6px;background:var(--card-2);border:1px solid var(--border);color:var(--muted);"
-       "white-space:nowrap}"
-       ".card-badge.live{background:var(--accent-soft);border-color:rgba(61,220,151,.35);color:var(--accent)}"
-       /* Form Fields */
-       ".field{margin-bottom:13px}"
-       ".field:last-child{margin-bottom:0}"
-       ".field-label{display:block;font-size:12px;font-weight:600;color:#c7d2e0;margin-bottom:5px}"
-       ".field-hint{display:block;font-size:11px;color:var(--dim);margin-top:4px}"
-       "input[type='text'],input[type='password'],input[type='number'],select{"
-       "width:100%;padding:9px 12px;background:#0b1017;color:var(--text);"
-       "border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;"
-       "transition:border-color .15s,box-shadow .15s;outline:none}"
-       "select{appearance:auto;cursor:pointer}"
-       "input[type='number']{font-family:var(--mono);font-variant-numeric:tabular-nums}"
-       "input:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(61,220,151,.15)}"
-       ".host-line input[type='text']{width:auto;flex:1;min-width:0}"
-       "input::placeholder{color:var(--dim)}"
-       /* Toggle Switch */
-       ".toggle-row{display:flex;align-items:center;justify-content:space-between;gap:14px;"
-       "padding:11px 13px;margin-top:6px;background:#0b1017;border:1px solid var(--border-soft);"
-       "border-radius:9px;cursor:pointer;user-select:none;transition:border-color .15s}"
-       ".toggle-row:hover{border-color:var(--border)}"
-       ".toggle-copy{display:flex;flex-direction:column;gap:2px}"
-       ".toggle-title{font-size:13px;font-weight:600;color:var(--text)}"
-       ".toggle-sub{font-size:11px;color:var(--muted)}"
-       ".toggle-input{position:absolute;opacity:0;width:0;height:0}"
-       ".toggle-track{position:relative;flex-shrink:0;width:40px;height:22px;background:#1c2635;"
-       "border:1px solid var(--border);border-radius:999px;transition:background .2s,border-color .2s}"
-       ".toggle-thumb{position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;"
-       "background:#8a99ad;transition:transform .2s,background .2s}"
-       ".toggle-input:checked+.toggle-track{background:rgba(61,220,151,.22);border-color:var(--accent)}"
-       ".toggle-input:checked+.toggle-track .toggle-thumb{transform:translateX(18px);background:var(--accent)}"
-       /* Printer Radio List */
-       ".printer-list{display:flex;flex-direction:column;gap:8px}"
-       ".printer-item{display:flex;align-items:center;justify-content:space-between;gap:10px;"
-       "padding:10px 13px;background:#0b1017;border:1px solid var(--border);border-radius:9px;"
-       "cursor:pointer;transition:border-color .15s,background .15s}"
-       ".printer-item:hover{border-color:#344863;background:#0e151f}"
-       ".printer-item.active{border-color:var(--accent);background:rgba(61,220,151,.07)}"
-       ".printer-left{display:flex;align-items:center;gap:10px;min-width:0}"
-       ".printer-left input[type='radio']{accent-color:var(--accent);width:16px;height:16px;margin:0;cursor:pointer}"
-       ".printer-name{font-weight:600;color:var(--text);font-size:13px;white-space:nowrap;"
-       "overflow:hidden;text-overflow:ellipsis}"
-       ".printer-model{font-family:var(--mono);font-size:11px;color:var(--muted);padding:2px 7px;"
-       "background:var(--card-2);border:1px solid var(--border-soft);border-radius:5px}"
-       ".empty-note{padding:16px;background:#0b1017;border:1px dashed var(--border);"
-       "border-radius:9px;color:var(--muted);font-size:13px;text-align:center}"
-       /* Buttons */
-       ".btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;"
-       "padding:10px 18px;border-radius:8px;font-size:13px;font-weight:650;font-family:inherit;"
-       "cursor:pointer;border:1px solid transparent;text-decoration:none;transition:all .15s}"
-       ".btn-primary{background:var(--accent);color:#06120c;border-color:var(--accent)}"
-       ".btn-primary:hover{background:var(--accent-hover);box-shadow:0 4px 16px rgba(61,220,151,.28)}"
-       ".btn-secondary{background:var(--card-2);color:var(--text);border-color:var(--border)}"
-       ".btn-secondary:hover{background:#1c293b;border-color:#354a66}"
-       ".btn-block{width:100%}"
-       ".ota-actions{display:flex;flex-direction:column;gap:10px;margin-top:8px}"
-       ".ota-meta{display:flex;align-items:center;justify-content:space-between;padding:10px 13px;"
-       "background:#0b1017;border:1px solid var(--border-soft);border-radius:9px;margin-bottom:10px}"
-       ".ota-ver{font-family:var(--mono);font-size:13px;font-weight:600;color:var(--text)}"
-       ".fw-rows{margin-bottom:12px}"
-       ".fw-row{display:flex;align-items:center;justify-content:space-between;gap:12px;"
-       "padding:9px 2px;border-bottom:1px solid var(--border-soft);font-size:13px}"
-       ".fw-row:last-child{border-bottom:0}"
-       ".fw-row .k{color:var(--muted)}"
-       ".fw-row .v{color:var(--text);text-align:right;font-variant-numeric:tabular-nums}"
-       ".fw-row .v.mono{font-family:var(--mono);font-weight:600}"
-       ".fw-row .v.new{color:var(--accent)}"
-       ".band{margin:0 0 30px}"
-       ".band-kicker{display:flex;align-items:center;gap:12px;margin:0 2px 8px}"
-       ".band-kicker h2{margin:0;font-size:11px;font-weight:700;letter-spacing:.16em;"
-       "text-transform:uppercase;color:#9aabbe;white-space:nowrap}"
-       ".band-kicker .card-badge{flex:none}"
-       "#f_otaPass{scroll-margin-top:28px}"
-       ".band-rule{flex:1;height:1px;min-width:16px;background:linear-gradient(90deg,#314158,transparent)}"
-       ".band-lead{margin:0 2px 12px;max-width:68ch;color:var(--muted);font-size:13px;line-height:1.45}"
-       ".band .grid-2{margin-bottom:0}"
-       ".card.thread{box-shadow:inset 0 2px 0 rgba(61,220,151,.9),inset 0 1px 0 rgba(255,255,255,.03),"
-       "0 8px 24px rgba(0,0,0,.25)}"
-       ".fw-split{display:grid;grid-template-columns:1fr;gap:16px}"
-       ".split-2{display:grid;grid-template-columns:1fr}"
-       "@media(min-width:760px){.fw-split{grid-template-columns:minmax(0,1.15fr) minmax(268px,.85fr);"
-       "align-items:start;gap:22px}"
-       ".split-2{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}"
-       ".card>.btn{margin-top:14px}"
-       ".fw-side{display:flex;flex-direction:column;gap:8px;padding:14px;background:#0b1017;"
-       "border:1px solid var(--border-soft);border-radius:10px}"
-       ".fw-side .toggle-row{margin-top:0;background:#111823}"
-       ".subhead{margin:14px 0 8px;font-size:11px;font-weight:700;letter-spacing:.08em;"
-       "text-transform:uppercase;color:var(--dim)}"
-       ".group .subhead:first-child,.fw-side>.subhead{margin-top:0}"
-       ".split-2 .group+.group{padding-top:16px;border-top:1px solid var(--border-soft)}"
-       "@media(min-width:760px){.split-2 .group+.group{padding:0 0 0 26px;border-top:0;"
-       "border-left:1px solid var(--border-soft)}}"
-       ".install{display:flex;flex-direction:column;gap:8px;margin-top:4px;padding-top:12px;"
-       "border-top:1px solid var(--border-soft)}"
-       ".install .subhead{margin-top:0}"
-       ".install form{margin:0}"
-       ".after-split{margin-top:16px;padding-top:16px;border-top:1px solid var(--border-soft)}"
-       ".after-split .subhead{margin-top:0}"
-       ".after-split .field{max-width:480px}"
-       ".group-lead{margin:-4px 0 12px;font-size:12px;color:var(--muted)}"
-       ".seg{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:6px}"
-       ".seg label{position:relative;cursor:pointer}"
-       ".seg input{position:absolute;opacity:0;width:0;height:0;margin:0}"
-       ".seg span{display:block;padding:9px 4px;text-align:center;font-size:13px;font-weight:600;"
-       "font-variant-numeric:tabular-nums;color:var(--text);background:var(--bg-elev);"
-       "border:1px solid var(--border);border-radius:8px;transition:background .15s,border-color .15s,color .15s}"
-       ".seg label:hover span{border-color:#30425a}"
-       ".seg input:checked+span{background:var(--accent);border-color:var(--accent);color:#07120d}"
-       ".seg input:focus-visible+span{box-shadow:0 0 0 3px rgba(61,220,151,.25)}"
-       ".seg input:disabled+span{color:var(--dim);background:transparent;border-style:dashed;cursor:not-allowed}"
-       ".group,.fw-split>div{min-width:0}"
-       ".fw-notes-btns{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}"
-       ".btn-quiet{background:transparent;color:var(--muted);border-color:var(--border);"
-       "padding:7px 13px;font-size:12px}"
-       ".btn-quiet:hover:not(:disabled){color:var(--text);border-color:#354a66}"
-       ".btn-quiet:disabled{opacity:.45;cursor:default}"
-       ".notes{display:none;max-height:300px;overflow:auto;margin:0 0 12px;padding:12px 14px;"
-       "background:#0b1017;border:1px solid var(--border-soft);border-radius:9px;color:#b9c8d9;"
-       "font:12px/1.55 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere}"
-       /* Bottom Save Bar */
-       ".save-bar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;"
-       "gap:14px;padding:16px 22px;margin-top:4px;background:rgba(17,24,35,.92);"
-       "border:1px solid var(--border);border-radius:13px;"
-       "box-shadow:0 12px 32px rgba(0,0,0,.4)}"
-       ".save-copy{font-size:13px;color:var(--muted)}"
-       ".save-copy strong{color:var(--text);font-weight:600}"
-       "</style><script>document.documentElement.classList.add('tabs-on')</script>"
+       "<title>Digital Swatch System</title><style>";
+  h += R"CSS(
+:root{--bg:#0a0e14;--card:#121820;--card-2:#182028;--inset:#0d1219;--border:#2a3544;--border-soft:#1e2834;--text:#f2f5f8;--muted:#8b98a8;--dim:#5c6b7a;--accent:#3ddc97;--warn:#ffb020;--danger:#ff5c6a;--radius:8px}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;font-size:15px;line-height:1.45}
+.shell{max-width:920px;margin:0 auto;padding:20px 16px 88px}
+.topbar{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:16px;padding:0 0 16px;margin:0 0 0;border:0;border-bottom:1px solid var(--border);border-radius:0;background:none;box-shadow:none}
+.brand{display:flex;align-items:center;gap:14px}
+.swatch-mark{display:flex;flex-direction:column;width:10px;height:40px;gap:2px;padding:0;background:none;border:0;border-radius:0}
+.swatch-mark span{display:block;flex:1;border-radius:1px}
+.sm-1{background:#6b7c32}.sm-2{background:#f3ef6a}.sm-3{background:#f07a1a}.sm-4{background:#9aa0a6}
+.brand-title{margin:0;font-size:22px;font-weight:500;letter-spacing:0}
+.brand-sub{margin:2px 0 0;font-size:13px;color:var(--muted)}
+.telemetry{display:flex;flex-wrap:wrap;gap:14px;align-items:center}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:0;background:none;border:0;border-radius:0;font:13px system-ui,sans-serif;color:var(--muted)}
+.chip strong{color:var(--text);font-weight:500}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:none}
+.dot-warn{background:var(--warn)}
+.tabs{display:flex;flex-wrap:wrap;gap:0;margin:16px 0 22px;padding:0;background:none;border:0;border-bottom:1px solid var(--border);border-radius:0;width:100%;max-width:none}
+.tab{padding:10px 14px 12px;margin-bottom:-1px;border-bottom:2px solid transparent;border-radius:0;color:var(--muted);font-size:14px;font-weight:500;text-decoration:none}
+.tab:hover{color:var(--text);background:none}
+.tab.active{color:var(--text);background:none;border-bottom-color:var(--accent)}
+.tabs-on .panel{display:none}
+.tabs-on #panel-status{display:block}
+.tabs-on .panel.on{display:block}
+.tabs-on.hide-status #panel-status{display:none}
+.tabs-on #saveBar{display:none}
+.tabs-on.save-on #saveBar{display:flex}
+.panel-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:0 0 14px}
+.panel-head .band-lead{margin:0;min-width:0}
+.band-lead,.card-desc,.group-lead,.field-hint,.toggle-sub,.note,.save-copy{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.band-lead{margin:0 0 14px;color:var(--muted);font-size:14px}
+.metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0;margin:0 0 16px;border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
+@media(min-width:760px){.metrics{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.metric{background:none;border:0;border-radius:0;box-shadow:none;padding:12px 12px 12px 0}
+.metric span{display:block;color:var(--dim);font-size:12px;font-weight:500;letter-spacing:0;text-transform:none;margin-bottom:2px}
+.metric strong{font:500 18px system-ui,sans-serif;font-variant-numeric:tabular-nums;color:var(--text)}
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;box-shadow:none;margin-bottom:16px}
+.card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px;padding-bottom:0;border-bottom:0}
+.card-title{margin:0;font-size:16px;font-weight:500}
+.card-desc{margin:4px 0 0;font-size:13px;color:var(--muted)}
+.card-badge{font-size:12px;font-weight:500;padding:2px 8px;border-radius:4px;background:var(--inset);border:1px solid var(--border);color:var(--muted);white-space:nowrap}
+.card-badge.live{background:#13261d;border-color:var(--accent);color:var(--accent)}
+.card-eyebrow{display:none}
+.thread{box-shadow:none}
+.grid-2{display:grid;grid-template-columns:1fr;gap:16px}
+@media(min-width:760px){.grid-2{grid-template-columns:1fr 1fr}}
+.row-2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.field{margin-bottom:12px}
+.field:last-child{margin-bottom:0}
+.field-label{display:block;font-size:13px;font-weight:500;color:var(--text);margin-bottom:6px}
+.field-hint{display:block;font-size:12px;color:var(--dim);margin-top:4px}
+input[type=text],input[type=password],input[type=number],select{width:100%;padding:10px 12px;background:var(--inset);color:var(--text);border:1px solid var(--border);border-radius:4px;font:14px system-ui,sans-serif;outline:none}
+input[type=number]{font-variant-numeric:tabular-nums}
+input:focus,select:focus{border-color:var(--accent);box-shadow:none}
+input::placeholder{color:var(--dim)}
+.host-line{display:flex;align-items:stretch}
+.host-line input{border-top-right-radius:0;border-bottom-right-radius:0;width:auto;flex:1;min-width:0}
+.host-suffix{display:flex;align-items:center;padding:0 12px;border:1px solid var(--border);border-left:0;border-radius:0 4px 4px 0;background:var(--inset);color:var(--muted);font-size:14px}
+.host-line.solo input{border-radius:4px}
+.host-line.solo .host-suffix{display:none}
+.host-line:focus-within input,.host-line:focus-within .host-suffix{border-color:var(--accent)}
+.toggle-row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:10px 0;margin-top:4px;background:none;border:0;border-radius:0;cursor:pointer}
+.toggle-copy{display:flex;flex-direction:column;gap:2px}
+.toggle-title{font-size:14px;font-weight:500}
+.toggle-sub{font-size:12px;color:var(--muted)}
+.toggle-input{position:absolute;opacity:0;width:0;height:0}
+.toggle-track{position:relative;flex:none;width:40px;height:22px;background:#1c2635;border:1px solid var(--border);border-radius:999px}
+.toggle-thumb{position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--muted)}
+.toggle-input:checked+.toggle-track{background:#13261d;border-color:var(--accent)}
+.toggle-input:checked+.toggle-track .toggle-thumb{transform:translateX(18px);background:var(--accent)}
+.printer-list{display:flex;flex-direction:column;gap:8px}
+.printer-item{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px;background:var(--inset);border:1px solid var(--border);border-radius:8px;cursor:pointer}
+.printer-item.active{border-color:var(--accent);background:#13261d}
+.printer-left{display:flex;align-items:center;gap:10px;min-width:0}
+.printer-left input{accent-color:var(--accent);width:16px;height:16px;margin:0}
+.printer-name{font-weight:500;font-size:15px}
+.printer-model{font-size:12px;color:var(--muted)}
+.empty-note{padding:16px;border:1px dashed var(--border);border-radius:8px;color:var(--muted);text-align:center}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:10px 16px;border-radius:8px;font:500 14px system-ui,sans-serif;cursor:pointer;border:1px solid transparent;text-decoration:none}
+.btn-primary{background:var(--accent);color:#0a0e14}
+.btn-primary:hover{filter:brightness(1.05)}
+.btn-secondary{background:var(--card-2);color:var(--text);border-color:var(--border)}
+.btn-secondary:hover{border-color:var(--muted)}
+.btn-danger{color:var(--danger);border-color:var(--danger);background:transparent}
+.btn-quiet{background:transparent;color:var(--muted);border-color:var(--border);padding:8px 12px;font-size:13px}
+.btn-quiet:disabled{opacity:.4;cursor:default}
+.btn-block{width:100%;margin-top:10px}
+.actions{display:flex;gap:8px}
+.diag-grid{display:grid;grid-template-columns:1fr;gap:16px}
+@media(min-width:760px){.diag-grid{grid-template-columns:minmax(0,1.6fr) minmax(240px,.7fr)}}
+#log{height:320px;margin:0;padding:12px;overflow:auto;background:var(--inset);border:1px solid var(--border-soft);border-radius:4px;color:#c5d0dc;font:12px/1.5 ui-monospace,monospace;white-space:pre-wrap}
+.shot{display:block;width:100%;height:auto;aspect-ratio:5/3;object-fit:contain;background:#0a0e14;border:1px solid var(--border);border-radius:4px;margin-bottom:8px}
+.shot[hidden]{display:none}
+.note{color:var(--muted);font-size:12px;margin:8px 0 0}
+.banner-warn{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:10px 14px;margin:0 0 16px;border-radius:8px;background:#2a1618;border:1px solid var(--danger);color:#ffd0d4;font-size:14px;white-space:nowrap}
+.banner-warn div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.banner-warn .btn{flex:none}
+.banner-warn strong{color:#fff}
+.fw-split{display:grid;grid-template-columns:1fr;gap:16px}
+.split-2{display:grid;grid-template-columns:1fr;gap:8px}
+@media(min-width:760px){.fw-split,.split-2{grid-template-columns:1fr 1fr;align-items:start}}
+.fw-rows{margin-bottom:12px}
+.fw-row{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--border-soft);font-size:14px}
+.fw-row .k{color:var(--muted)}
+.fw-row .v{text-align:right;font-variant-numeric:tabular-nums}
+.fw-row .v.mono{font-weight:500}
+.fw-row .v.new{color:var(--accent)}
+.fw-side{display:flex;flex-direction:column;gap:8px}
+.subhead{margin:16px 0 8px;font-size:13px;font-weight:500;letter-spacing:0;text-transform:none;color:var(--text)}
+.group .subhead:first-child,.fw-side>.subhead{margin-top:0}
+.group-lead{margin:0 0 10px;font-size:13px;color:var(--muted)}
+.install{display:flex;flex-direction:column;gap:8px;margin-top:8px}
+.after-split{margin-top:8px}
+.set-row{display:flex;align-items:center;gap:16px;padding:8px 0;border-bottom:1px solid var(--border-soft)}
+.set-row:last-child{border-bottom:0}
+.set-row .field-label{margin:0;width:132px;flex:none;white-space:nowrap}
+.set-row input,.set-row select{width:auto;flex:1;min-width:0}
+.set-row .host-line{flex:1;min-width:0}
+.set-row .toggle-row{flex:1;margin:0;padding:0}
+.set-row .seg{flex:1}
+.seg{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:6px}
+.seg label{position:relative;cursor:pointer}
+.seg input{position:absolute;opacity:0;width:0;height:0}
+.seg span{display:block;padding:10px 4px;text-align:center;font-size:14px;font-weight:500;font-variant-numeric:tabular-nums;color:var(--text);background:var(--inset);border:1px solid var(--border);border-radius:4px}
+.seg input:checked+span{background:var(--accent);border-color:var(--accent);color:#0a0e14}
+.seg input:focus-visible+span{outline:2px solid var(--accent);outline-offset:2px}
+.seg input:disabled+span{color:var(--dim);border-style:dashed}
+.notes{display:none;max-height:280px;overflow:auto;margin:8px 0;padding:12px;background:var(--inset);border:1px solid var(--border-soft);border-radius:4px;color:#c5d0dc;font:12px/1.5 ui-monospace,monospace;white-space:pre-wrap}
+.fw-notes-btns{display:flex;gap:8px;margin-bottom:8px}
+.save-bar{position:sticky;bottom:12px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;background:#121820;border:1px solid var(--border);border-radius:8px}
+.save-copy{font-size:13px;color:var(--muted);min-width:0}
+.save-copy strong{color:var(--text);font-weight:500}
+#f_otaPass{scroll-margin-top:24px}
+)CSS";
+  h += "</style><script>document.documentElement.classList.add('tabs-on')</script>"
        "</head><body><div class='shell'>";
 
   // 1. Top Command Header
@@ -545,8 +446,8 @@ void handleRoot() {
 
   // 2. Security Warning if no password is set
   if (c.otaPassword.length() == 0) {
-    h += "<div class='banner-warn'><div><strong>Unprotected Console:</strong> "
-         "No admin/OTA password is set. Anyone on your local network can modify settings or flash firmware.</div>"
+    h += "<div class='banner-warn'><div><strong>Unprotected.</strong> "
+         "Anyone on this network can change settings or flash firmware.</div>"
          "<a href='#panel-network' class='btn btn-secondary' data-focus='f_otaPass' "
          "style='padding:6px 12px;font-size:12px'>Set Password</a></div>";
   }
@@ -554,17 +455,7 @@ void handleRoot() {
   // Firmware is its own band. The two update-check switches post with the
   // settings form (id=cfg) via the form attribute, so the install button
   // does not save them.
-  h += "<section id='panel-firmware' class='panel'><div class='panel-head'>"
-       "<p class='band-lead'>The version on this panel, whether it should look for a newer one, "
-       "and how to install an update.</p>";
-  if (updateAvail && latestVer.length()) {
-    h += "<span class='card-badge live'>NEW v" + esc(latestVer) + "</span>";
-  } else {
-    h += "<span class='card-badge'>OTA Ready</span>";
-  }
-  h += "</div><div class='card thread'><div class='fw-split'><div>";
-  // Channel, dates and notes come from the GitHub API through the browser
-  // (script below). The install time is the device's own record.
+  h += "<section id='panel-firmware' class='panel'><div class='card thread'><div class='fw-split'><div>";
   h += "<div class='fw-rows'>"
        "<div class='fw-row'><span class='k'>Installed</span><span class='v mono'>v";
   h += esc(String(FIRMWARE_VERSION));
@@ -574,33 +465,23 @@ void handleRoot() {
        "<div class='fw-row'><span class='k'>Installed on</span><span class='v' id='fwsince' data-t='";
   h += String(ota_installed_at());
   h += "'>&hellip;</span></div>"
-       "<div class='fw-row'><span class='k'>Latest on GitHub</span><span class='v mono";
+       "<div class='fw-row'><span class='k'>GitHub</span><span class='v mono";
   if (updateAvail) h += " new";
   h += "' id='ghlat'>";
   h += latestVer.length() ? "v" + esc(latestVer) : String("&hellip;");
   h += "</span></div>"
-       "<div class='fw-row'><span class='k'>Latest released</span><span class='v' id='ghrel'>&hellip;</span></div>"
+       "<div class='fw-row'><span class='k'>GitHub released</span><span class='v' id='ghrel'>&hellip;</span></div>"
        "</div><div class='fw-notes-btns'>"
        "<button type='button' class='btn btn-quiet' id='fwnb' disabled>Release notes</button>"
        "<button type='button' class='btn btn-quiet' id='ghnb' disabled>What's new</button></div>"
        "<pre class='notes' id='fwn'></pre><pre class='notes' id='ghn'></pre>"
-       "<p class='field-hint' style='margin:0'>Release details are read from GitHub by this browser.</p>"
-       "</div><div class='fw-side'><p class='subhead'>Update checks</p>";
-  h += toggleField("Automatically Check for Firmware Updates",
-                   "Check GitHub Releases hourly and show an update badge on the display menu",
-                   "autoOta", c.autoCheckUpdates, "cfg");
-  h += toggleField("Include Beta Releases",
-                   "Also offer GitHub pre-releases. Betas are for testing and may have bugs; "
-                   "the web flasher only ever installs stable releases",
-                   "beta", c.betaUpdates, "cfg");
-  h += "<p class='field-hint'>Saved with the configuration at the bottom of this page.</p>"
-       "<div class='install'><p class='subhead'>Install</p>"
-       "<form method='POST' action='/github-update'>"
-       "<button class='btn btn-primary btn-block' type='submit'>"
-       "Check &amp; Install Latest Release from GitHub</button></form>"
-       "<a class='btn btn-secondary btn-block' href='/update'>"
-       "Upload Local .bin Firmware Over Wi-Fi</a>"
-       "</div></div></div></div></section>";
+       "</div><div class='fw-side'>";
+  h += toggleField("Check automatically", nullptr, "autoOta", c.autoCheckUpdates, "cfg");
+  h += toggleField("Include betas", nullptr, "beta", c.betaUpdates, "cfg");
+  h += "<form method='POST' action='/github-update'>"
+       "<button class='btn btn-primary btn-block' type='submit'>Install latest</button></form>"
+       "<a class='btn btn-secondary btn-block' href='/update'>Upload .bin</a>"
+       "</div></div></div></section>";
 
   // Printer selection posts on its own and must not nest inside the save form.
   // Diagnostics lives here too: this is the first tab, so there is no separate page.
@@ -670,11 +551,11 @@ void handleRoot() {
        "<aside class='card'><div class='card-head'><div>"
        "<h3 class='card-title'>Display screenshot</h3>"
        "<p class='card-desc'>Capture the current 800 x 480 framebuffer.</p></div></div>"
-       "<div class='shot'>RGB565 framebuffer<br>800 x 480</div>"
+       "<img class='shot' id='shot' alt='The panel, 800 by 480' hidden>"
+       "<button type='button' class='btn btn-secondary btn-block' id='shotBtn'>Show the screen</button>"
        "<a class='btn btn-primary btn-block' href='/screenshot.png' download='filaman-display.png'>"
-       "Download Current Screenshot</a>"
-       "<p class='note'>The image is the screen on the panel right now. "
-       "Encoding it as a PNG can take a few seconds.</p></aside></div></section>";
+       "Download PNG</a>"
+       "<p class='note'>PNG of the screen right now. Encoding takes a few seconds.</p></aside></div></section>";
 
   h += "<form id='cfg' method='POST' action='/save'>";
 
@@ -690,11 +571,11 @@ void handleRoot() {
   h += display_poll_active() ? "Active" : "Standby";
   h += "</span></div>";
   h += field("FilaMan Base URL", "fmUrl", c.filamanBaseUrl, "text",
-             "Example: http://192.168.1.50:8000 (leave blank to use MQTT only)",
+             "Blank uses MQTT only",
              "http://192.168.1.50:8000");
-  h += pwField("FilaMan API Key", "fmKey", "Bearer token for the FilaMan Display API");
-  h += toggleField("Allow Self-Signed LAN TLS",
-                   "Skip certificate verification when connecting to FilaMan over local HTTPS",
+  h += pwField("FilaMan API Key", "fmKey", "Display API key");
+  h += toggleField("Allow self-signed LAN TLS",
+                   "Skip certificate checks for local HTTPS",
                    "fmTls", c.filamanTlsInsecure);
   h += "</div>";
 
@@ -710,33 +591,24 @@ void handleRoot() {
   h += pwField("MQTT Password", "mqttPass");
   h += "</div>";
   h += field("MQTT Topic Prefix", "topicPfx", c.topicPrefix, "text",
-             "Base topic subscribed by the panel (e.g. filaman/display)");
+             "Topic this panel subscribes to");
   h += "</div></div></div>";
 
-  h += "<div id='panel-network' class='panel'><div class='panel-head'>"
-       "<p class='band-lead'>Wi-Fi, the name on your network, the clock, and the password for this console.</p>"
-       "</div><div class='card'><div class='split-2'><div class='group'><p class='subhead'>Wireless</p>";
-  h += field("Wi-Fi SSID (2.4 GHz)", "wifiSsid", c.wifiSsid, "text");
-  h += pwField("Wi-Fi Password", "wifiPass");
-  h += "<p class='subhead'>Console access</p>";
-  h += pwField("Admin / OTA Password", "otaPass",
-               "Protects this web console (user: admin) and wireless OTA flashing");
-  h += "</div><div class='group'><p class='subhead'>Name and clock</p>";
+  h += "<div id='panel-network' class='panel'><div class='card'>"
+       "<div class='set-row'><label class='field-label' for='f_wifiSsid'>Wi-Fi SSID</label>"
+       "<input id='f_wifiSsid' type='text' name='wifiSsid' value='";
+  h += esc(c.wifiSsid);
+  h += "'></div>"
+       "<div class='set-row'><label class='field-label' for='f_wifiPass'>Wi-Fi password</label>"
+       "<input id='f_wifiPass' type='password' name='wifiPass' placeholder='Leave blank to keep existing'></div>"
+       "<div class='set-row'><label class='field-label' for='f_otaPass'>Admin password</label>"
+       "<input id='f_otaPass' type='password' name='otaPass' placeholder='Leave blank to keep existing'></div>";
   {
     String hostShown = c.otaHostname;
     if (hostShown.endsWith(".local")) {
       hostShown = hostShown.substring(0, hostShown.length() - 6);
     }
-    String hint = "The name your router shows, and the wireless update target. "
-                  "Clear it to restore the default.";
-    if (WiFi.status() == WL_CONNECTED) {
-      hint += "<br>Reachable at: ";
-      if (mdns_running()) {
-        hint += "http://" + esc(hostShown) + ".local/ &middot; ";
-      }
-      hint += "http://" + WiFi.localIP().toString() + "/";
-    }
-    h += "<div class='field'><label class='field-label' for='f_otaHost'>Device Hostname</label>"
+    h += "<div class='set-row'><label class='field-label' for='f_otaHost'>Hostname</label>"
          "<div class='host-line";
     if (!c.mdnsEnabled) {
       h += " solo";
@@ -749,22 +621,14 @@ void handleRoot() {
     }
     h += "><input id='f_otaHost' type='text' name='otaHost' value='";
     h += esc(hostShown);
-    h += "'><span class='host-suffix'>.local</span></div><span class='field-hint' id='hostHint'>";
-    h += hint;
-    h += "</span></div>";
+    h += "'><span class='host-suffix'>.local</span></div></div>"
+         "<p class='field-hint' id='hostHint'></p>";
   }
-  h += toggleField("Answer to .local on the local network (mDNS)",
-                   "Finds the panel by name with no DNS server involved. Turn off if your "
-                   "network should carry no .local traffic; wireless updates then use the IP.",
-                   "mdns", c.mdnsEnabled);
+  h += toggleField(".local name", nullptr, "mdns", c.mdnsEnabled);
   h += timezoneField(c.displayTimezone);
-  h += "</div></div></div></div>";
+  h += "</div></div>";
 
-  h += "<div id='panel-display' class='panel'><div class='panel-head'>"
-       "<p class='band-lead'>Backlight, sleep timers, navigation, spool alerts, and orientation &mdash; "
-       "the same choices as Display &amp; Alerts on the panel.</p>"
-       "</div><div class='card'><div class='split-2'><div class='group'><p class='subhead'>Backlight</p>"
-       "<p class='group-lead'>Brightness while awake and when the panel soft-dims.</p>";
+  h += "<div id='panel-display' class='panel'><div class='card'>";
   {
     static constexpr int kFullVals[] = {50, 75, 100};
     static constexpr const char *kFullLbls[] = {"50%", "75%", "100%"};
@@ -780,39 +644,22 @@ void handleRoot() {
     static constexpr const char *kLowLbls[] = {"20%", "30%", "40%"};
     static constexpr int kCritVals[] = {10, 15, 20};
     static constexpr const char *kCritLbls[] = {"10%", "15%", "20%"};
-    h += choiceField("Awake", "Normal viewing brightness", "brtFull", kFullVals, kFullLbls, 3,
-                     c.displayFullBrightPct);
-    h += choiceField("Dimmed", "After idle, before the screen turns off", "brtDim", kDimVals,
-                     kDimLbls, 3, c.displayDimBrightPct);
-    h += "</div><div class='group'><p class='subhead'>Sleep timers</p>"
-         "<p class='group-lead'>Dim first, then blank the panel, or leave it dimmed.</p>";
-    h += choiceField("Dim after", "Time idle before soft-dim", "dimMin", kTimeoutVals,
-                     kTimeoutLbls, 4, c.displayDimMin);
-    h += choiceField("Turn off after", "Longer than dim, or never", "offMin", kOffTimeoutVals,
-                     kOffTimeoutLbls, 5, c.displayOffMin);
-    h += "</div></div><div class='split-2 after-split'><div class='group'>"
-         "<p class='subhead'>Navigation</p>"
-         "<p class='group-lead'>Return to AMS View when you walk away from other screens.</p>";
-    h += choiceField("Auto-return", "Inactivity timeout", "idleSec", kIdleVals, kIdleLbls, 3,
-                     c.idleReturnSec);
-    h += "</div><div class='group'><p class='subhead'>Spool alerts</p>"
-         "<p class='group-lead'>Remaining filament thresholds for amber warning and red critical.</p>";
-    h += choiceField("Low warning", "Amber threshold", "spLow", kLowVals, kLowLbls, 3,
-                     c.spoolLowPct);
-    h += choiceField("Critical", "Red alert threshold", "spCrit", kCritVals, kCritLbls, 3,
-                     c.spoolCritPct);
+    h += choiceField("Awake", nullptr, "brtFull", kFullVals, kFullLbls, 3, c.displayFullBrightPct);
+    h += choiceField("Dimmed", nullptr, "brtDim", kDimVals, kDimLbls, 3, c.displayDimBrightPct);
+    h += choiceField("Dim after", nullptr, "dimMin", kTimeoutVals, kTimeoutLbls, 4, c.displayDimMin);
+    h += choiceField("Off after", nullptr, "offMin", kOffTimeoutVals, kOffTimeoutLbls, 5,
+                     c.displayOffMin);
+    h += choiceField("Auto-return", nullptr, "idleSec", kIdleVals, kIdleLbls, 3, c.idleReturnSec);
+    h += choiceField("Low spool", nullptr, "spLow", kLowVals, kLowLbls, 3, c.spoolLowPct);
+    h += choiceField("Critical", nullptr, "spCrit", kCritVals, kCritLbls, 3, c.spoolCritPct);
   }
-  h += "</div></div><div class='after-split'><p class='subhead'>Orientation</p>";
-  h += toggleField("Flip the screen 180&deg;",
-                   "Turns the picture and touch around if the panel is mounted upside down.",
-                   "flip", c.displayFlipped);
-  h += "</div></div></div>";
+  h += toggleField("Flip 180&deg;", nullptr, "flip", c.displayFlipped);
+  h += "</div></div>";
 
   h += "<div class='save-bar' id='saveBar'><div class='save-copy'>"
-       "<strong>Apply configuration</strong> &mdash; Saves every setting on this page, "
-       "including the firmware update checks, then reboots the display."
+       "<strong>Apply.</strong> Saves these settings, then reboots."
        "</div><button class='btn btn-primary' type='submit' style='min-width:210px'>"
-       "Save Configuration &amp; Reboot</button></div></form>";
+       "Save and reboot</button></div></form>";
 
   h += footerLinks();
   h += "<script>const REPO='" PROJECT_GITHUB_REPO "',INST='";
@@ -877,8 +724,9 @@ function syncHost(){
  hostLine.classList.toggle('solo',!on);
  const name=($('f_otaHost').value||'').trim();
  const ip=hostLine.dataset.ip||'';
- let t='The name your router shows, and the wireless update target. Clear it to restore the default.';
- if(ip){t+=' Reachable at: ';if(on&&name)t+='http://'+name+'.local/ · ';t+='http://'+ip+'/';}
+ let t='';
+ if(on&&name)t='http://'+name+'.local/';
+ else if(ip)t='http://'+ip+'/';
  hostHint.textContent=t;
 }
 $('f_mdns').addEventListener('change',syncHost);
@@ -899,6 +747,9 @@ function syncTimers(e){
 }
 document.querySelectorAll('input[name=dimMin],input[name=offMin]').forEach(i=>i.addEventListener('change',syncTimers));
 syncTimers();
+$('shotBtn').onclick=()=>{const i=$('shot');i.hidden=false;i.removeAttribute('src');
+i.src='/screenshot.png?t='+Date.now();$('shotBtn').textContent='Refreshing…';
+i.onload=()=>{$('shotBtn').textContent='Refresh the screen';};};
 let paused=false;
 const log=$('log');
 async function loadLog(){

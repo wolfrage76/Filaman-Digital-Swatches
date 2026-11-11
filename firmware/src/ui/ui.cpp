@@ -62,6 +62,8 @@ struct ColumnWidgets {
   lv_obj_t *profileName = nullptr;
   lv_obj_t *temps = nullptr;
   lv_obj_t *bedTemp = nullptr;
+  lv_obj_t *bedBox = nullptr;
+  lv_obj_t *bedDivider = nullptr;
   lv_obj_t *remainingBar = nullptr;
   lv_obj_t *remaining = nullptr;
   lv_obj_t *cost = nullptr;
@@ -202,8 +204,6 @@ int currentPage = AMS_OVERVIEW_PAGE;
 unsigned long lastActivityMs = 0;
 unsigned long lastPrinterUpdateMs = 0;
 unsigned long lastFreshnessRefreshMs = 0;
-unsigned long remainingPhaseMs = 0;
-bool showRemainingGrams = false;
 unsigned long lastUiApplyMs = 0;
 bool dataDirty = false;
 bool connectionDirty = false;
@@ -1016,17 +1016,14 @@ uint32_t spoolBorderColor(const OverviewSlot &slot) {
   return COL_BORDER;
 }
 
-// AMS View bays are narrow, so one figure occupies the label and they trade
-// places. A missing grams value stays on percent, so that bay never changes.
+// AMS View shows the weight under the bar. Percent stays in the bar itself.
+// A bay with no gram reading falls back to percent so the line is not blank.
 String remainingAmountText(int percent, int grams) {
-  if (showRemainingGrams && grams >= 0) {
+  if (grams >= 0) {
     return String(grams) + "g";
   }
   if (percent >= 0) {
     return String(percent) + "%";
-  }
-  if (grams >= 0) {
-    return String(grams) + "g";
   }
   return "";
 }
@@ -1603,15 +1600,19 @@ void refreshColumn(int column) {
   setLabelIfChanged(widgets.temps, temps);
   setTextColorIfChanged(widgets.temps, slot.empty ? COL_DIM : COL_TEXT);
 
-  String bed = (!slot.empty && slot.bedTemp.length()) ? slot.bedTemp + " C" : String("--");
-  setLabelIfChanged(widgets.bedTemp, bed);
-  setTextColorIfChanged(widgets.bedTemp, slot.empty ? COL_DIM : COL_TEXT);
+  const bool showBed = !slot.empty && slot.bedTemp.length() > 0;
+  setHiddenIfChanged(widgets.bedBox, !showBed);
+  setHiddenIfChanged(widgets.bedDivider, !showBed);
+  setLabelIfChanged(widgets.bedTemp, showBed ? slot.bedTemp + " C" : String("--"));
+  setTextColorIfChanged(widgets.bedTemp, COL_TEXT);
 
   if (slot.empty) {
     setBarValueIfChanged(widgets.remainingBar, 0);
     setBgOpaIfChanged(widgets.colorRail, LV_OPA_60);
     setLabelIfChanged(widgets.remaining, String("--"));
     setTextColorIfChanged(widgets.remaining, COL_DIM);
+    setLabelIfChanged(widgets.cost, "");
+    setHiddenIfChanged(widgets.cost, true);
 
     setLabelIfChanged(widgets.meta, String("EMPTY"));
     setTextColorIfChanged(widgets.meta, COL_DIM);
@@ -1624,31 +1625,34 @@ void refreshColumn(int column) {
     const uint32_t barCol = remainingBarColor(slot.remainingPercent);
     setIndicatorColorIfChanged(widgets.remainingBar, barCol);
 
-    String rem;
-    if (slot.remainingPercent >= 0) {
-      rem += String(slot.remainingPercent) + "%";
-    }
     const int grams = slot.remainingGrams.length() ? slot.remainingGrams.toInt() : -1;
+    String weight = "--";
     if (grams >= 0) {
-      if (rem.length()) {
-        rem += "  (";
-        rem += String(grams) + "g)";
-      } else {
-        rem += String(grams) + "g";
-      }
+      weight = String(grams) + " g";
+    } else if (slot.remainingPercent >= 0) {
+      weight = String(slot.remainingPercent) + "%";
     }
-    const int metres = remainingLengthMeters(slot);
-    if (metres >= 0) {
-      if (rem.length()) {
-        rem += "  |  ";
-      }
-      rem += "~" + String(metres) + "m";
-    }
-    setLabelIfChanged(widgets.remaining, rem.length() ? rem : String("--"));
+    setLabelIfChanged(widgets.remaining, weight);
     const uint32_t remTextCol =
         (slot.remainingPercent >= 0 && slot.remainingPercent < config().spoolLowPct) ? barCol
                                                                                      : COL_TEXT;
     setTextColorIfChanged(widgets.remaining, remTextCol);
+
+    String detail;
+    if (grams >= 0 && slot.remainingPercent >= 0) {
+      detail = String(slot.remainingPercent) + "%";
+    }
+    const int metres = remainingLengthMeters(slot);
+    if (metres >= 0) {
+      if (detail.length()) {
+        detail += "   ";
+      }
+      detail += "~" + String(metres) + "m";
+    }
+    setHiddenIfChanged(widgets.cost, detail.length() == 0);
+    if (detail.length()) {
+      setLabelIfChanged(widgets.cost, detail);
+    }
 
     // Status pill: ACTIVE > Backup badge > RFID / MANUAL
     if (slot.active) {
@@ -1913,13 +1917,8 @@ void refreshOverviewBay(OverviewBay &bay, const OverviewUnit &unit, int index, b
       lv_obj_set_height(bay.root, lv_pct(100));
     }
     if (bay.swatch) {
-      // A thin bar on an AMS slot as on an AMS-HT one: the 16 pixels it gives
-      // up are the second line of a colour name that does not fit on one.
-      int swatchH = 22;
-      if (cellBay && !isHtKind(unit.amsKind)) {
-        swatchH = 28;
-      }
-      lv_obj_set_height(bay.swatch, swatchH);
+      lv_obj_set_height(bay.swatch, 27);
+      lv_obj_set_flex_grow(bay.swatch, 0);
     }
   }
 
@@ -1945,9 +1944,11 @@ void refreshOverviewBay(OverviewBay &bay, const OverviewUnit &unit, int index, b
     }
     setLabelIfChanged(bay.material, String("Empty"));
     setTextColorIfChanged(bay.material, COL_MUTED);
+    if (bay.material) {
+      lv_obj_move_foreground(bay.material);
+    }
     setHiddenIfChanged(bay.desc, true);
     setHiddenIfChanged(bay.remainingRow, true);
-    setHiddenIfChanged(bay.brand, true);
     return;
   }
 
@@ -1964,7 +1965,10 @@ void refreshOverviewBay(OverviewBay &bay, const OverviewUnit &unit, int index, b
     lv_obj_move_foreground(bay.bayLabel);
   }
   setLabelIfChanged(bay.material, slot.material.length() ? slot.material : String("--"));
-  setTextColorIfChanged(bay.material, COL_TEXT);
+  setTextColorIfChanged(bay.material, ink);
+  if (bay.material) {
+    lv_obj_move_foreground(bay.material);
+  }
 
   // The colour name alone. The slot that feeds is told by its border, and
   // the word after the name cost a line the name may need itself.
@@ -1972,12 +1976,6 @@ void refreshOverviewBay(OverviewBay &bay, const OverviewUnit &unit, int index, b
   setHiddenIfChanged(bay.desc, !showDesc);
   if (showDesc) {
     setLabelIfChanged(bay.desc, slot.colorName);
-  }
-
-  const bool showBrand = slot.manufacturer.length() > 0;
-  setHiddenIfChanged(bay.brand, !showBrand);
-  if (showBrand) {
-    setLabelIfChanged(bay.brand, slot.manufacturer);
   }
 
   if (slot.remainingPercent >= 0) {
@@ -2487,14 +2485,16 @@ void buildColumn(lv_obj_t *parent, int index) {
   lv_obj_set_width(topRow, lv_pct(100));
   lv_obj_set_height(topRow, 22);
   lv_obj_set_flex_flow(topRow, LV_FLEX_FLOW_ROW);
-  lv_obj_set_flex_align(topRow, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER,
-                        LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_flex_align(topRow, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
   lv_obj_clear_flag(topRow, LV_OBJ_FLAG_SCROLLABLE);
 
+  // The rail badge already names the bay. A second "SLOT 1" only stole a line
+  // from the color name.
   widgets.title = lv_label_create(topRow);
   lv_obj_set_style_text_font(widgets.title, &lv_font_montserrat_12, 0);
   lv_obj_set_style_text_color(widgets.title, lv_color_hex(COL_MUTED), 0);
-  lv_label_set_text(widgets.title, "SLOT 1");
+  lv_label_set_text(widgets.title, "");
+  lv_obj_add_flag(widgets.title, LV_OBJ_FLAG_HIDDEN);
 
   lv_obj_t *badgeRow = lv_obj_create(topRow);
   lv_obj_remove_style_all(badgeRow);
@@ -2624,13 +2624,15 @@ void buildColumn(lv_obj_t *parent, int index) {
   lv_obj_set_style_text_color(widgets.temps, lv_color_hex(COL_TEXT), 0);
   lv_label_set_text(widgets.temps, "--");
 
-  lv_obj_t *divider2 = lv_obj_create(specRow);
+  widgets.bedDivider = lv_obj_create(specRow);
+  lv_obj_t *divider2 = widgets.bedDivider;
   lv_obj_remove_style_all(divider2);
   lv_obj_set_size(divider2, 1, 24);
   lv_obj_set_style_bg_color(divider2, lv_color_hex(COL_BORDER_SOFT), 0);
   lv_obj_set_style_bg_opa(divider2, LV_OPA_COVER, 0);
 
-  lv_obj_t *bedBox = lv_obj_create(specRow);
+  widgets.bedBox = lv_obj_create(specRow);
+  lv_obj_t *bedBox = widgets.bedBox;
   lv_obj_remove_style_all(bedBox);
   lv_obj_set_width(bedBox, 0);
   lv_obj_set_height(bedBox, lv_pct(100));
@@ -2649,33 +2651,15 @@ void buildColumn(lv_obj_t *parent, int index) {
   lv_obj_set_style_text_color(widgets.bedTemp, lv_color_hex(COL_TEXT), 0);
   lv_label_set_text(widgets.bedTemp, "--");
 
-  // 4. Bottom Spool Remaining Gauge: Header Row + Progress Bar
+  // Bar, then the weight, then percent and length. Same order as AMS View.
   lv_obj_t *gaugeBox = lv_obj_create(body);
   lv_obj_remove_style_all(gaugeBox);
   lv_obj_set_width(gaugeBox, lv_pct(100));
-  lv_obj_set_height(gaugeBox, LV_SIZE_CONTENT);
+  lv_obj_set_height(gaugeBox, 42);
   lv_obj_set_flex_flow(gaugeBox, LV_FLEX_FLOW_COLUMN);
-  lv_obj_set_style_pad_row(gaugeBox, 4, 0);
+  lv_obj_set_flex_align(gaugeBox, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_style_pad_row(gaugeBox, 2, 0);
   lv_obj_clear_flag(gaugeBox, LV_OBJ_FLAG_SCROLLABLE);
-
-  lv_obj_t *gaugeHead = lv_obj_create(gaugeBox);
-  lv_obj_remove_style_all(gaugeHead);
-  lv_obj_set_width(gaugeHead, lv_pct(100));
-  lv_obj_set_height(gaugeHead, 16);
-  lv_obj_set_flex_flow(gaugeHead, LV_FLEX_FLOW_ROW);
-  lv_obj_set_flex_align(gaugeHead, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER,
-                        LV_FLEX_ALIGN_CENTER);
-  lv_obj_clear_flag(gaugeHead, LV_OBJ_FLAG_SCROLLABLE);
-
-  lv_obj_t *remKey = lv_label_create(gaugeHead);
-  lv_obj_set_style_text_font(remKey, &lv_font_montserrat_12, 0);
-  lv_obj_set_style_text_color(remKey, lv_color_hex(COL_DIM), 0);
-  lv_label_set_text(remKey, "REMAINING");
-
-  widgets.remaining = lv_label_create(gaugeHead);
-  lv_obj_set_style_text_font(widgets.remaining, &lv_font_montserrat_14, 0);
-  lv_obj_set_style_text_color(widgets.remaining, lv_color_hex(COL_TEXT), 0);
-  lv_label_set_text(widgets.remaining, "--");
 
   widgets.remainingBar = lv_bar_create(gaugeBox);
   lv_obj_set_width(widgets.remainingBar, lv_pct(100));
@@ -2688,6 +2672,20 @@ void buildColumn(lv_obj_t *parent, int index) {
   lv_obj_set_style_bg_color(widgets.remainingBar, lv_color_hex(COL_ACCENT), LV_PART_INDICATOR);
   lv_obj_set_style_radius(widgets.remainingBar, 3, LV_PART_MAIN);
   lv_obj_set_style_radius(widgets.remainingBar, 3, LV_PART_INDICATOR);
+
+  widgets.remaining = lv_label_create(gaugeBox);
+  lv_obj_set_style_text_font(widgets.remaining, &lv_font_montserrat_16, 0);
+  lv_obj_set_style_text_color(widgets.remaining, lv_color_hex(COL_TEXT), 0);
+  lv_obj_set_width(widgets.remaining, lv_pct(100));
+  lv_obj_set_style_text_align(widgets.remaining, LV_TEXT_ALIGN_CENTER, 0);
+  lv_label_set_text(widgets.remaining, "--");
+
+  widgets.cost = lv_label_create(gaugeBox);
+  lv_obj_set_style_text_font(widgets.cost, &lv_font_montserrat_12, 0);
+  lv_obj_set_style_text_color(widgets.cost, lv_color_hex(COL_MUTED), 0);
+  lv_obj_set_width(widgets.cost, lv_pct(100));
+  lv_obj_set_style_text_align(widgets.cost, LV_TEXT_ALIGN_CENTER, 0);
+  lv_label_set_text(widgets.cost, "");
 }
 
 void buildStatusPage(lv_obj_t *parent) {
@@ -2850,7 +2848,8 @@ void buildOverviewBay(OverviewBay &bay, lv_obj_t *parent, bool withClimate) {
   lv_obj_set_style_bg_color(bay.root, lv_color_hex(COL_AMS_SOFT), 0);
   lv_obj_set_style_border_width(bay.root, 1, 0);
   lv_obj_set_style_border_color(bay.root, lv_color_hex(COL_BORDER), 0);
-  lv_obj_set_style_radius(bay.root, 0, 0);
+  lv_obj_set_style_radius(bay.root, 6, 0);
+  lv_obj_set_style_clip_corner(bay.root, true, 0);
   lv_obj_set_style_min_width(bay.root, 0, 0);
   lv_obj_set_flex_flow(bay.root, LV_FLEX_FLOW_COLUMN);
   lv_obj_set_flex_grow(bay.root, 1);
@@ -2861,32 +2860,54 @@ void buildOverviewBay(OverviewBay &bay, lv_obj_t *parent, bool withClimate) {
   bay.swatch = lv_obj_create(bay.root);
   lv_obj_remove_style_all(bay.swatch);
   lv_obj_set_width(bay.swatch, lv_pct(100));
-  lv_obj_set_height(bay.swatch, 34);
+  lv_obj_set_height(bay.swatch, 27);
+  lv_obj_set_flex_grow(bay.swatch, 0);
   lv_obj_set_style_bg_opa(bay.swatch, LV_OPA_COVER, 0);
-  lv_obj_set_style_pad_hor(bay.swatch, 6, 0);
-  lv_obj_set_style_pad_ver(bay.swatch, 4, 0);
+  lv_obj_set_style_pad_all(bay.swatch, 0, 0);
   lv_obj_set_style_clip_corner(bay.swatch, true, 0);
   lv_obj_set_flex_flow(bay.swatch, LV_FLEX_FLOW_ROW);
   lv_obj_set_flex_align(bay.swatch, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
   lv_obj_clear_flag(bay.swatch, LV_OBJ_FLAG_SCROLLABLE);
   lv_obj_clear_flag(bay.swatch, LV_OBJ_FLAG_CLICKABLE);
 
+  // Both labels float on the color. A flex child in this row never settles and
+  // the redraw starves RGB scanout, which leaves the glass black.
   bay.bayLabel = lv_label_create(bay.swatch);
   lv_obj_set_style_text_font(bay.bayLabel, &lv_font_montserrat_12, 0);
   lv_obj_set_style_text_color(bay.bayLabel, lv_color_hex(COL_TEXT), 0);
   lv_label_set_long_mode(bay.bayLabel, LV_LABEL_LONG_DOT);
-  lv_obj_set_width(bay.bayLabel, lv_pct(100));
-  // Inset the slot id only. Padding the swatch also shifts the color fill.
-  lv_obj_set_style_pad_left(bay.bayLabel, 10, 0);
+  lv_obj_set_width(bay.bayLabel, LV_SIZE_CONTENT);
+  lv_obj_add_flag(bay.bayLabel, LV_OBJ_FLAG_FLOATING | LV_OBJ_FLAG_IGNORE_LAYOUT);
+  lv_obj_align(bay.bayLabel, LV_ALIGN_LEFT_MID, 5, 0);
+  lv_obj_clear_flag(bay.bayLabel, LV_OBJ_FLAG_CLICKABLE);
   lv_obj_move_foreground(bay.bayLabel);
 
-  bay.material = makeLabel(bay.root, &lv_font_montserrat_14, lv_color_hex(COL_TEXT));
-  lv_obj_set_style_pad_hor(bay.material, 6, 0);
-  bay.desc = makeLabel(bay.root, &lv_font_montserrat_12, lv_color_hex(COL_MUTED));
-  lv_obj_set_style_pad_hor(bay.desc, 6, 0);
+  bay.material = lv_label_create(bay.swatch);
+  lv_obj_set_style_text_font(bay.material, &lv_font_montserrat_16, 0);
+  lv_obj_set_style_text_color(bay.material, lv_color_hex(COL_TEXT), 0);
+  lv_label_set_long_mode(bay.material, LV_LABEL_LONG_DOT);
+  lv_obj_set_width(bay.material, LV_SIZE_CONTENT);
+  lv_obj_add_flag(bay.material, LV_OBJ_FLAG_FLOATING | LV_OBJ_FLAG_IGNORE_LAYOUT);
+  lv_obj_align(bay.material, LV_ALIGN_RIGHT_MID, -5, 0);
+  lv_obj_clear_flag(bay.material, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_move_foreground(bay.material);
+
+  bay.desc = makeLabel(bay.root, &lv_font_montserrat_18, lv_color_hex(COL_TEXT));
+  lv_obj_set_style_pad_hor(bay.desc, 2, 0);
+  lv_obj_set_style_pad_top(bay.desc, 2, 0);
   lv_label_set_long_mode(bay.desc, LV_LABEL_LONG_WRAP);
   lv_obj_set_width(bay.desc, lv_pct(100));
-  lv_obj_set_flex_grow(bay.desc, 1);
+  lv_obj_set_height(bay.desc, LV_SIZE_CONTENT);
+  lv_obj_set_style_max_height(bay.desc, lv_font_montserrat_18.line_height * 2, 0);
+
+  // Grows so the remaining weight sits on the bottom edge of the bay.
+  // A non-zero base height keeps the flex layout from failing to settle.
+  lv_obj_t *spacer = lv_obj_create(bay.root);
+  lv_obj_remove_style_all(spacer);
+  lv_obj_set_width(spacer, lv_pct(100));
+  lv_obj_set_height(spacer, 4);
+  lv_obj_set_flex_grow(spacer, 1);
+  lv_obj_clear_flag(spacer, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
 
   if (withClimate) {
     bay.climate = makeLabel(bay.root, &lv_font_montserrat_12, lv_color_hex(COL_MUTED));
@@ -2894,36 +2915,29 @@ void buildOverviewBay(OverviewBay &bay, lv_obj_t *parent, bool withClimate) {
     lv_obj_add_flag(bay.climate, LV_OBJ_FLAG_HIDDEN);
   }
 
-  bay.brand = makeLabel(bay.root, &lv_font_montserrat_12, lv_color_hex(COL_DIM));
-  lv_obj_set_style_pad_hor(bay.brand, 6, 0);
-  lv_label_set_long_mode(bay.brand, LV_LABEL_LONG_DOT);
-  lv_obj_set_width(bay.brand, lv_pct(100));
-  lv_obj_add_flag(bay.brand, LV_OBJ_FLAG_HIDDEN);
-
   bay.remainingRow = lv_obj_create(bay.root);
   lv_obj_remove_style_all(bay.remainingRow);
   lv_obj_set_width(bay.remainingRow, lv_pct(100));
-  lv_obj_set_height(bay.remainingRow, 12);
-  lv_obj_set_style_pad_hor(bay.remainingRow, 6, 0);
-  lv_obj_set_flex_flow(bay.remainingRow, LV_FLEX_FLOW_ROW);
+  lv_obj_set_height(bay.remainingRow, 36);
+  lv_obj_set_style_pad_hor(bay.remainingRow, 2, 0);
+  lv_obj_set_flex_flow(bay.remainingRow, LV_FLEX_FLOW_COLUMN);
   lv_obj_set_flex_align(bay.remainingRow, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER,
                        LV_FLEX_ALIGN_CENTER);
-  lv_obj_set_style_pad_column(bay.remainingRow, 4, 0);
+  lv_obj_set_style_pad_row(bay.remainingRow, 2, 0);
   lv_obj_clear_flag(bay.remainingRow, LV_OBJ_FLAG_SCROLLABLE);
 
   bay.remainingBar = lv_bar_create(bay.remainingRow);
-  lv_obj_set_flex_grow(bay.remainingBar, 1);
+  lv_obj_set_width(bay.remainingBar, lv_pct(100));
   lv_obj_set_height(bay.remainingBar, 4);
   lv_bar_set_range(bay.remainingBar, 0, 100);
   lv_obj_set_style_bg_color(bay.remainingBar, lv_color_hex(0x0B1410), LV_PART_MAIN);
   lv_obj_set_style_bg_color(bay.remainingBar, lv_color_hex(COL_ACCENT), LV_PART_INDICATOR);
 
   bay.pct = lv_label_create(bay.remainingRow);
-  lv_obj_set_style_text_font(bay.pct, &lv_font_montserrat_12, 0);
+  lv_obj_set_style_text_font(bay.pct, &lv_font_montserrat_16, 0);
   lv_obj_set_style_text_color(bay.pct, lv_color_hex(COL_MUTED), 0);
-  // Fixed width so "100%" and "1000g" swap without resizing the bar.
-  lv_obj_set_width(bay.pct, 48);
-  lv_obj_set_style_text_align(bay.pct, LV_TEXT_ALIGN_RIGHT, 0);
+  lv_obj_set_width(bay.pct, lv_pct(100));
+  lv_obj_set_style_text_align(bay.pct, LV_TEXT_ALIGN_CENTER, 0);
   lv_label_set_text(bay.pct, "");
 }
 
@@ -2975,9 +2989,10 @@ void buildOverviewPage(lv_obj_t *parent) {
     lv_obj_set_style_bg_color(card.root, lv_color_hex(COL_AMS_CARD), 0);
     lv_obj_set_style_border_width(card.root, 1, 0);
     lv_obj_set_style_border_color(card.root, lv_color_hex(0x1F3A2C), 0);
-    lv_obj_set_style_radius(card.root, 0, 0);
-    lv_obj_set_style_pad_all(card.root, 6, 0);
-    lv_obj_set_style_pad_row(card.root, 4, 0);
+    lv_obj_set_style_radius(card.root, 8, 0);
+    lv_obj_set_style_clip_corner(card.root, true, 0);
+    lv_obj_set_style_pad_all(card.root, 3, 0);
+    lv_obj_set_style_pad_row(card.root, 2, 0);
     lv_obj_set_style_min_width(card.root, 0, 0);
     if (i < AMS2PRO_COUNT) {
       // Width/height are refined in layoutOverviewBoard (1 or 2 units per row).
@@ -3046,8 +3061,8 @@ void buildOverviewPage(lv_obj_t *parent) {
     // AMS slots stay in one row. HT cards may wrap into a 2×2 when grouped.
     lv_obj_set_flex_flow(card.bayRow,
                          i < AMS2PRO_COUNT ? LV_FLEX_FLOW_ROW : LV_FLEX_FLOW_ROW_WRAP);
-    lv_obj_set_style_pad_row(card.bayRow, 4, 0);
-    lv_obj_set_style_pad_column(card.bayRow, 4, 0);
+    lv_obj_set_style_pad_row(card.bayRow, 2, 0);
+    lv_obj_set_style_pad_column(card.bayRow, 2, 0);
     lv_obj_clear_flag(card.bayRow, LV_OBJ_FLAG_SCROLLABLE);
 
     for (int b = 0; b < MAX_OVERVIEW_SLOTS; ++b) {
@@ -3314,30 +3329,6 @@ void applyConnectionIcon(const String &message) {
   }
   setLabelIfChanged(connIcon, LV_SYMBOL_WARNING);
   setTextColorIfChanged(connIcon, COL_WARN);
-}
-
-// AMS View only. The label width is fixed, so swapping % and g does not reflow.
-void refreshRemainingLabelsOnly() {
-  if (!isOverviewPage()) {
-    return;
-  }
-  for (int i = 0; i < MAX_OVERVIEW_CARDS; ++i) {
-    OverviewCard &card = overviewCards[i];
-    if (!card.root || lv_obj_has_flag(card.root, LV_OBJ_FLAG_HIDDEN)) {
-      continue;
-    }
-    OverviewUnit unit;
-    if (!cardUnitFor(i, unit)) {
-      continue;
-    }
-    for (int c = 0; c < unit.slotCount && c < MAX_OVERVIEW_SLOTS; ++c) {
-      const OverviewSlot &slot = unit.slots[c];
-      if (slot.remainingPercent < 0 && slot.remainingGrams < 0) {
-        continue;
-      }
-      setLabelIfChanged(card.bays[c].pct, remainingAmountText(slot.remainingPercent, slot.remainingGrams));
-    }
-  }
 }
 
 }  // namespace
@@ -3640,15 +3631,6 @@ void ui_loop() {
     lastFreshnessRefreshMs = now;
     refreshFreshness();
   }
-  if (now - remainingPhaseMs >= 10000UL) {
-    remainingPhaseMs = now;
-    showRemainingGrams = !showRemainingGrams;
-    // Skip while a staged repaint is running; that pass reads the new phase.
-    if (applyStage < 0) {
-      refreshRemainingLabelsOnly();
-    }
-  }
-
   // If the AMS unit we're viewing was unplugged (or the monitored printer
   // changed), its nav chip is gone - bounce back to AMS View.
   if (!pageVisibleForNav(currentPage)) {

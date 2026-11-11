@@ -49,7 +49,7 @@ Arduino_ESP32RGBPanel *bus = new Arduino_ESP32RGBPanel(
     15 /* B0 */, 7 /* B1 */, 6 /* B2 */, 5 /* B3 */, 4 /* B4 */,
     0 /* hsync_polarity */, 40 /* hsync_front_porch */, 48 /* hsync_pulse_width */, 40 /* hsync_back_porch */,
     0 /* vsync_polarity */, 1 /* vsync_front_porch */, 31 /* vsync_pulse_width */, 13 /* vsync_back_porch */,
-    1 /* pclk_active_neg */, 8000000 /* prefer_speed */);
+    1 /* pclk_active_neg */, 12000000 /* prefer_speed */);
 #endif
 
 Arduino_RGB_Display *gfx =
