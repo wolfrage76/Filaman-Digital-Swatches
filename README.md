@@ -1,6 +1,6 @@
 # Digital Swatch System
 
-A touchscreen that shows your Bambu Lab AMS trays as filament swatches, plus live print status, powered by [FilaMan](https://www.filaman.app).
+A touchscreen that shows your Bambu Lab AMS trays as filament swatches, plus live print status, powered by [FilaMan](https://www.filaman.app) and [Bambuddy](https://bambuddy.cool/).
 
 [![Release](https://img.shields.io/github/v/release/wolfrage76/Filaman-Digital-Swatches)](https://github.com/wolfrage76/Filaman-Digital-Swatches/releases)
 [![Web Flasher](https://img.shields.io/badge/install-Web%20Flasher-blue)](https://wolfrage76.github.io/Filaman-Digital-Swatches/)
@@ -16,7 +16,7 @@ A touchscreen that shows your Bambu Lab AMS trays as filament swatches, plus liv
 - Printer HMS and low-spool alerts
 - Browser-based install, on-panel setup, and over-the-air updates
 - Web config page with a device log and panel screenshots
-- Runs on the Elecrow CrowPanel 7″, the Waveshare ESP32-S3-Touch-LCD-7, and the Guition JC4880P443C 4.3″
+- Runs on the Elecrow CrowPanel 7″, the Waveshare ESP32-S3-Touch-LCD-7, and the Guition JC4880P443C 4.3″ - Let me know if you use a different panel
 
 ## Requirements
 
@@ -26,8 +26,11 @@ A touchscreen that shows your Bambu Lab AMS trays as filament swatches, plus liv
 - **2.4 GHz** Wi‑Fi
 - A running FilaMan instance and an **API key** from the FilaMan UI
 
+
 > [!TIP]
-> For live jobs and AMS detail, run [Bambuddy](https://github.com/maziggy/bambuddy) and enable FilaMan's Bambuddy driver. Without a printer driver the panel still links, but trays stay empty.
+> For live jobs and AMS detail, with more data, run [Bambuddy](https://github.com/maziggy/bambuddy) and enable FilaMan's Bambuddy driver. Without a printer driver the panel still links, but trays stay empty.
+> FilaMan + Bambuddy is the perfect combo for many reasons, including scanning a spool and sticking it in an AMS slot and your custom filament slicer profiles will automatically be set on the AMS and in Bambu Studio,
+> just like Bambu spools and official Bambu profiles work! Seriously, you want FilaMan and Bambuddy, and not just for this.
 
 ## Supported boards
 
