@@ -9,6 +9,10 @@ A touchscreen that shows your Bambu Lab AMS trays as filament swatches, plus liv
 |---|---|
 | ![Four AMS units and four AMS-HT slots with filament swatches](docs/images/ams-overview.png) | ![Four trays with color swatches, brand, nozzle range, bed temp, and remaining length](docs/images/ams-slot.png) |
 
+## What is Digital Swatch System?
+
+Firmware for an ESP32 touchscreen that sits next to your Bambu Lab printer and shows what is loaded in every AMS slot: color, brand, temperatures, and how much is left. It is for people who already track spools in FilaMan. You no longer need the printer screen or Bambu Studio to see what is loaded, and it installs from the browser without a toolchain.
+
 ## Features
 
 - AMS A–D and AMS-HT trays shown as color swatches with brand, nozzle range, bed temp, and remaining length
@@ -46,9 +50,7 @@ A touchscreen that shows your Bambu Lab AMS trays as filament swatches, plus liv
 > [!CAUTION]
 > The three boards share the same screens but **not** the same firmware. Flash only the image for the panel in front of you. The panel refuses an update whose board id does not match.
 
-`xxxx` is the last four hex digits of the panel's Wi‑Fi MAC address, so several panels on one network get different names. **≡ → System** shows the panel's address and hostname.
-
-`firmware.bin` is the same bytes as `firmware-crowpanel-s3-lcd7.bin`. Older CrowPanel firmware still looks for that name.
+`xxxx` is the last four hex digits of the panel's Wi‑Fi MAC address. **≡ → System** shows the panel's address and hostname.
 
 ## Getting started
 
@@ -76,8 +78,6 @@ Then select the serial port, wait until the install reaches 100%, and power-cycl
 
 The header Wi‑Fi icon turns green when FilaMan is linked, amber while it is still connecting, and a red `×` when Wi‑Fi itself failed.
 
-Each panel's default **Hostname** ends in part of its MAC address, so panels on one network don't collide. Clear the field to go back to the default. **Answer to .local on the local network (mDNS)** controls the `.local` name. With it off, reach the panel and send wireless updates by IP address.
-
 ## Using the panel
 
 - **AMS View** is the home screen. Tap a unit for its trays. The header **←** returns. Tap the printer name to open **Print Status**.
@@ -93,10 +93,37 @@ Each panel's default **Hostname** ends in part of its MAC address, so panels on 
 | Trays empty or static inventory | Live AMS A–D and AMS-HT color, temp, humidity, drying |
 | Few alerts | Printer HMS and low-spool alerts |
 
+## Configuration
+
+Every setting lives on the panel's web config page (`http://<hostname>.local/`) and survives firmware updates. **Save and reboot** applies them. Most are also on the panel's `≡` menu.
+
+| Tab | Setting | Default | What it changes |
+|---|---|---|---|
+| Data | FilaMan Base URL | empty | FilaMan server the panel polls. Empty means MQTT only. |
+| Data | FilaMan API Key | empty | Display API key (`uak....`) from the FilaMan UI. |
+| Data | Allow self-signed LAN TLS | on | Skips certificate checks for a local `https://` FilaMan. |
+| Data | MQTT Broker Host / Port | empty / `1883` | Fallback broker, used when FilaMan is unset or failing. |
+| Data | MQTT Username / Password | empty | Broker login. |
+| Data | MQTT Topic Prefix | `display/amsview` | The panel subscribes to `<prefix>/#`. |
+| Network | Wi-Fi SSID / password | empty | 2.4 GHz network the panel joins. |
+| Network | Admin password | empty | Requires user `admin` for the config page and wireless updates. |
+| Network | Hostname | `<board>-xxxx` | `.local` name. Clear it to go back to the default. |
+| Network | .local name | on | Answers to `<hostname>.local` (mDNS). Off means reach the panel by IP. |
+| Network | Time zone | UTC | Time zone for the panel's clock. |
+| Display | Awake / Dimmed | 100% / 20% | Backlight brightness. |
+| Display | Dim after / Off after | 5 min / 15 min | Idle time before the screen dims, then turns off. |
+| Display | Auto-return | 1 min | Idle time before the panel goes back to AMS View. |
+| Display | Low spool / Critical | 30% / 15% | Remaining-filament thresholds for spool alerts. |
+| Display | Flip 180° | off | Rotates picture and touch for an upside-down mount. |
+| Firmware | Check automatically | off | Checks GitHub for new firmware. |
+| Firmware | Include betas | off | Also offers GitHub pre-releases. |
+
+The printer is chosen on the Status tab (auto-select by default). To bake defaults into a build you compile yourself, see `include/secrets.h` under [Build from source](#build-from-source).
+
 ## Updating
 
 - **On the panel:** Menu → Firmware Update → **Check for updates**. The version comes from GitHub Pages. **Automatically check for updates** is the last control on that screen.
-- **From a browser on the LAN:** open `http://<panel-ip>/update` as user `admin` and upload that board's `.bin`.
+- **From a browser on the LAN:** open `http://<panel-ip>/update` as user `admin` and upload that board's `.bin`. On CrowPanel, `firmware.bin` and `firmware-crowpanel-s3-lcd7.bin` are the same file; older firmware still looks for `firmware.bin`.
 - **Over USB:** **Keep Settings & Update** for that board on the web flasher.
 
 To test new features early, turn on **Include beta releases** on the panel's Firmware Update screen or on the web config page. The panel then also offers GitHub pre-releases. The web flasher only installs stable releases.
@@ -272,3 +299,7 @@ Full pin and command notes: [firmware/FLASHING.md](firmware/FLASHING.md#advanced
 
 > [!NOTE]
 > The GitHub repository is still named [Filaman-Digital-Swatches](https://github.com/wolfrage76/Filaman-Digital-Swatches). Installed panels check its Pages site for updates, so the repo address stays.
+
+## License
+
+[GNU Affero General Public License v3.0](LICENSE).
